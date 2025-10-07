@@ -3,7 +3,9 @@ import os
 from dotenv import load_dotenv
 
 # Charger les variables d'environnement du fichier .env
-load_dotenv()
+from pathlib import Path
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+
 
 # --- Clé API ---
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
