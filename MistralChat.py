@@ -145,6 +145,15 @@ if prompt := st.chat_input(f"Posez votre question sur la {NAME}..."):
         logging.info(f"Recherche de contexte pour la question: '{prompt}' avec k={SEARCH_K}")
         search_results = vector_store_manager.search(prompt, k=SEARCH_K)
         logging.info(f"{len(search_results)} chunks trouvés dans le Vector Store.")
+
+        if search_results:
+            logging.info(f"--- Contextes utilisés pour la question : {prompt} ---")
+            for i, res in enumerate(search_results):
+                logging.info(f"[Contexte {i+1}] Score: {res['score']:.1f}% | Source: {res['metadata'].get('source', 'Inconnue')}")
+                logging.info(f"Contenu: {res['text'][:300]}...\n")
+        else:
+            logging.warning("Aucun contexte pertinent trouvé.")
+
     except Exception as e:
         st.error(f"Une erreur est survenue lors de la recherche d'informations pertinentes: {e}")
         logging.exception(f"Erreur pendant vector_store_manager.search pour la query: {prompt}")

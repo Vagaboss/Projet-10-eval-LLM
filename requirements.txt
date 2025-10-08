@@ -15,3 +15,5 @@ easyocr
 tqdm
 ragas
 pydantic
+datasets
+evaluate
