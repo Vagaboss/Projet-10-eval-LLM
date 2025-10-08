@@ -18,8 +18,8 @@ Ce projet implémente un assistant virtuel basé sur le modèle Mistral, utilisa
 1. **Cloner le dépôt**
 
 ```bash
-git clone <url-du-repo>
-cd <nom-du-repo>
+git clone https://github.com/Vagaboss/Projet-10-eval-LLM.git
+cd Projet-10-eval-LLM
 ```
 
 2. **Créer un environnement virtuel**
@@ -105,25 +105,45 @@ L'application sera accessible à l'adresse http://localhost:8501 dans votre navi
 ## Modules principaux
 
 ### `utils/vector_store.py`
+Gère la base vectorielle FAISS et la recherche sémantique :  
+- Découpage des documents en *chunks*  
+- Génération des embeddings Mistral  
+- Création et interrogation de l’index FAISS  
+- Sauvegarde et chargement des données (`faiss_index.idx`, `document_chunks.pkl`)
 
-Gère l'index vectoriel FAISS et la recherche sémantique :
-- Chargement et découpage des documents
-- Génération des embeddings avec Mistral
-- Création et interrogation de l'index FAISS
+### `utils/data_loader.py`
+Responsable de l’extraction du texte à partir de fichiers bruts :  
+- Supporte PDF, DOCX, TXT, CSV, Excel  
+- Gère les fichiers scannés via **EasyOCR**  
+- Retourne une liste normalisée de documents exploitables pour l’indexation 
 
-### `utils/query_classifier.py`
+### `utils/config.py`
+Centralise tous les paramètres du projet :  
+- Chargement du `.env`  
+- Chemins (`inputs/`, `vector_db/`)  
+- Paramètres techniques (taille de chunk, chevauchement, etc.)  
+- Modèles utilisés (`mistral-small-latest`, `mistral-embed`)
 
-Détermine si une requête nécessite une recherche RAG :
-- Analyse des mots-clés
-- Classification avec le modèle Mistral
-- Détection des questions spécifiques vs générales
+---
 
-### `utils/database.py`
+## 🧠 Architecture du système
 
-Gère la base de données SQLite pour les interactions :
-- Enregistrement des questions et réponses
-- Stockage des feedbacks utilisateurs
-- Récupération des statistiques
+
+[Documents bruts]
+      │
+      ▼
+ data_loader.py    →  extraction et parsing du texte
+      │
+      ▼
+ indexer.py        →  orchestre l’indexation (embeddings + FAISS)
+      │
+      ▼
+ vector_store.py   →  construit et interroge la base vectorielle
+      │
+      ▼
+ MistralChat.py    →  interface Streamlit (RAG + génération de réponse)
+
+
 
 ## Personnalisation
 
