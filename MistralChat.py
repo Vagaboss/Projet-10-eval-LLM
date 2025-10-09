@@ -5,6 +5,7 @@ import logging
 from mistralai.client import MistralClient
 from mistralai.models.chat_completion import ChatMessage
 from dotenv import load_dotenv
+import time 
 
 # --- Importations depuis vos modules ---
 try:
@@ -98,6 +99,8 @@ def generer_reponse(prompt_messages: list[ChatMessage]) -> str:
         # Log le contenu du prompt (peut être long) - commenter si trop verbeux
         # logging.debug(f"Prompt envoyé à l'API: {prompt_messages}")
 
+        time.sleep(1.5)
+
         response = client.chat(
             model=model,
             messages=prompt_messages,
@@ -144,6 +147,7 @@ if prompt := st.chat_input(f"Posez votre question sur la {NAME}..."):
     try:
         logging.info(f"Recherche de contexte pour la question: '{prompt}' avec k={SEARCH_K}")
         search_results = vector_store_manager.search(prompt, k=SEARCH_K)
+        time.sleep(1)
         logging.info(f"{len(search_results)} chunks trouvés dans le Vector Store.")
 
         if search_results:

@@ -1,0 +1,24 @@
+[
+  {
+    "question": "Quel joueur a le meilleur % à 3 points sur les 5 derniers matchs ?",
+    "ground_truth": "Skal Labissiere 100.00 (1/1)\nAndre Jackson Jr. 100.00 (1/1)\nAlondes Williams 100.00 (1/1)\nNic Claxton 100.00 (2/2)\nPJ Dozier 100.00 (1/1)"
+  },
+  {
+    "question": "Quel joueur a le meilleur pourcentage de réussite à 3 points ?",
+    "ground_truth": "Alondes Williams"
+  },
+  {
+    "question": "Compare les statistiques de rebonds de l’équipe Lakers à domicile et à l’extérieur",
+    "ground_truth": "📊 Saison 2024-25 - Los Angeles Lakers\n🏠 Rebond à domicile  : 1920.00\n🚌 Rebond à l’extérieur : 1886.00"
+  },
+  {
+    "question": "Qui a marqué le plus de points sur les 10 derniers matchs ?",
+    "ground_truth": "Nikola Jokić - 333 points"
+  },
+  {
+    "question": "Quel joueur a marqué le plus de points cette saison ?",
+    "ground_truth": "Shai Gilgeous-Alexander"
+  }
+]
+
+
