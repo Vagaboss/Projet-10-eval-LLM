@@ -9,6 +9,8 @@ import logging
 import numpy as np
 from tqdm import tqdm # Ajout de tqdm
 
+from utils.schemas import Document
+
 # --- Importations pour OCR ---
 try:
     import fitz  # PyMuPDF
@@ -273,4 +275,16 @@ def load_and_parse_files(input_dir: str) -> List[Dict[str, any]]:
                 })
 
     logging.info(f"{len(documents)} documents chargés et parsés.")
-    return documents
+    # --- Validation Pydantic ---
+    validated_documents = []
+    for doc in documents:
+        try:
+            validated = Document(**doc)
+            validated_documents.append(validated.dict())
+        except Exception as e:
+            logging.warning(
+                f"Document invalide ignoré ({doc.get('metadata', {}).get('source', 'inconnu')}) : {e}"
+            )
+
+    logging.info(f"{len(validated_documents)} documents valides sur {len(documents)}.")
+    return validated_documents

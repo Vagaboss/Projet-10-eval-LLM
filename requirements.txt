@@ -19,3 +19,4 @@ datasets==2.20.0
 evaluate
 nba_api
 langchain-mistralai
+pydantic-logfire
