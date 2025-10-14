@@ -1,10 +1,18 @@
 # utils/config.py
 import os
 from dotenv import load_dotenv
-
+import logfire
 # Charger les variables d'environnement du fichier .env
 from pathlib import Path
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+from logfire import configure as logfire_configure
+
+LOGFIRE_API_KEY = os.getenv("LOGFIRE_API_KEY")
+
+if LOGFIRE_API_KEY:
+    os.environ["LOGFIRE_API_KEY"] = LOGFIRE_API_KEY  # ✅ on s’assure qu’elle est bien dans l’environnement
+    logfire.configure()
+
 
 
 # --- Clé API ---

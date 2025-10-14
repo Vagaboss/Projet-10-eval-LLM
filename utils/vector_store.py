@@ -4,6 +4,7 @@ import pickle
 import faiss
 import numpy as np
 import logging
+from logfire import span
 from typing import List, Dict, Tuple, Optional
 from mistralai.client import MistralClient
 from mistralai.exceptions import MistralAPIException
@@ -157,39 +158,47 @@ class VectorStoreManager:
             logging.warning("Aucun document fourni pour construire l'index.")
             return
 
-        # 1. Découper en chunks
-        self.document_chunks = self._split_documents_to_chunks(documents)
-        if not self.document_chunks:
-            logging.error("Le découpage n'a produit aucun chunk. Impossible de construire l'index.")
-            return
+        # --- Étape 1 : Découper en chunks ---
+        with span("Découpage des documents en chunks"):
+            self.document_chunks = self._split_documents_to_chunks(documents)
+            if not self.document_chunks:
+                logging.error("Le découpage n'a produit aucun chunk. Impossible de construire l'index.")
+                return
+            else:
+                logging.info(f"{len(self.document_chunks)} chunks créés à partir des documents.")
 
-        # 2. Générer les embeddings
-        embeddings = self._generate_embeddings(self.document_chunks)
+        # --- Étape 2 : Générer les embeddings ---
+        with span("Génération des embeddings Mistral"):
+            embeddings = self._generate_embeddings(self.document_chunks)
+
         if embeddings is None or embeddings.shape[0] != len(self.document_chunks):
             logging.error("Problème de génération d'embeddings. Le nombre d'embeddings ne correspond pas au nombre de chunks.")
             # Nettoyer pour éviter un état incohérent
             self.document_chunks = []
             self.index = None
-            # Supprimer les fichiers potentiellement corrompus
-            if os.path.exists(FAISS_INDEX_FILE): os.remove(FAISS_INDEX_FILE)
-            if os.path.exists(DOCUMENT_CHUNKS_FILE): os.remove(DOCUMENT_CHUNKS_FILE)
+            if os.path.exists(FAISS_INDEX_FILE):
+                os.remove(FAISS_INDEX_FILE)
+            if os.path.exists(DOCUMENT_CHUNKS_FILE):
+                os.remove(DOCUMENT_CHUNKS_FILE)
             return
 
+        # --- Étape 3 : Créer l'index Faiss ---
+        with span("Création de l’index FAISS"):
+            dimension = embeddings.shape[1]
+            logging.info(f"Création de l'index Faiss optimisé pour la similarité cosinus avec dimension {dimension}...")
 
-        # 3. Créer l'index Faiss optimisé pour la similarité cosinus
-        dimension = embeddings.shape[1]
-        logging.info(f"Création de l'index Faiss optimisé pour la similarité cosinus avec dimension {dimension}...")
+            # Normaliser les embeddings pour la similarité cosinus
+            faiss.normalize_L2(embeddings)
 
-        # Normaliser les embeddings pour la similarité cosinus
-        faiss.normalize_L2(embeddings)
+            # Créer un index pour la similarité cosinus (IndexFlatIP = produit scalaire)
+            self.index = faiss.IndexFlatIP(dimension)
+            self.index.add(embeddings)
+            logging.info(f"Index Faiss créé avec {self.index.ntotal} vecteurs.")
 
-        # Créer un index pour la similarité cosinus (IndexFlatIP = produit scalaire)
-        self.index = faiss.IndexFlatIP(dimension)
-        self.index.add(embeddings)
-        logging.info(f"Index Faiss créé avec {self.index.ntotal} vecteurs.")
-
-        # 4. Sauvegarder l'index et les chunks
-        self._save_index_and_chunks()
+        # --- Étape 4 : Sauvegarder ---
+        with span("Sauvegarde de l’index et des chunks"):
+            self._save_index_and_chunks()
+            logging.info("Index et chunks sauvegardés avec succès.")
 
     def _save_index_and_chunks(self):
         """Sauvegarde l'index Faiss et la liste des chunks."""
