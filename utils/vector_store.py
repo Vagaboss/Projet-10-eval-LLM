@@ -1,23 +1,24 @@
 # utils/vector_store.py
+import logfire
 import os
 import pickle
 import faiss
 import numpy as np
 import logging
-from logfire import span
+
 from typing import List, Dict, Tuple, Optional
 from mistralai.client import MistralClient
 from mistralai.exceptions import MistralAPIException
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document # Utilisé pour le format attendu par le splitter
+from langchain_core.documents import Document  # Utilisé pour le format attendu par le splitter
 from utils.schemas import DocumentChunk
-
 from .config import (
     MISTRAL_API_KEY, EMBEDDING_MODEL, EMBEDDING_BATCH_SIZE,
     FAISS_INDEX_FILE, DOCUMENT_CHUNKS_FILE, CHUNK_SIZE, CHUNK_OVERLAP
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 class VectorStoreManager:
     """Gère la création, le chargement et la recherche dans un index Faiss."""
@@ -51,33 +52,30 @@ class VectorStoreManager:
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE,
             chunk_overlap=CHUNK_OVERLAP,
-            length_function=len, # Important: mesure en caractères
-            add_start_index=True, # Ajoute la position de début du chunk dans le document original
+            length_function=len,
+            add_start_index=True,
         )
 
         all_chunks = []
         doc_counter = 0
         for doc in documents:
-            # Convertit notre format de document en format Langchain Document pour le splitter
             langchain_doc = Document(page_content=doc["page_content"], metadata=doc["metadata"])
             chunks = text_splitter.split_documents([langchain_doc])
             logging.info(f"  Document '{doc['metadata'].get('filename', 'N/A')}' découpé en {len(chunks)} chunks.")
 
-            # Enrichit chaque chunk avec des métadonnées supplémentaires
             for i, chunk in enumerate(chunks):
                 chunk_dict = {
-                    "id": f"{doc_counter}_{i}", # Identifiant unique du chunk (doc_index_chunk_index)
+                    "id": f"{doc_counter}_{i}",
                     "text": chunk.page_content,
                     "metadata": {
-                        **chunk.metadata, # Métadonnées héritées du document (source, category, etc.)
-                        "chunk_id_in_doc": i, # Position du chunk dans son document d'origine
-                        "start_index": chunk.metadata.get("start_index", -1) # Position de début (en caractères)
+                        **chunk.metadata,
+                        "chunk_id_in_doc": i,
+                        "start_index": chunk.metadata.get("start_index", -1)
                     }
                 }
-                # ✅ Validation Pydantic du chunk
                 try:
                     validated_chunk = DocumentChunk(**chunk_dict)
-                    all_chunks.append(validated_chunk.dict())  # Conversion en dict compatible
+                    all_chunks.append(validated_chunk.dict())
                 except Exception as e:
                     logging.warning(
                         f"Chunk invalide ignoré ({chunk_dict['metadata'].get('source', 'inconnu')}) : {e}"
@@ -87,8 +85,6 @@ class VectorStoreManager:
 
         logging.info(f"Total de {len(all_chunks)} chunks valides créés.")
         return all_chunks
-
-              
 
     def _generate_embeddings(self, chunks: List[Dict[str, any]]) -> Optional[np.ndarray]:
         """Génère les embeddings pour une liste de chunks via l'API Mistral."""
@@ -121,84 +117,83 @@ class VectorStoreManager:
                 logging.error(f"  Détails: Status Code={e.status_code}, Message={e.message}")
             except Exception as e:
                 logging.error(f"Erreur inattendue lors de la génération d'embeddings (lot {batch_num}): {e}")
-                 # Gérer l'erreur: ici on ajoute des vecteurs nuls pour ne pas bloquer
-                num_failed = len(texts_to_embed)
-                if all_embeddings: # Si on a déjà des embeddings, on prend la dimension du premier
-                    dim = len(all_embeddings[0])
-                else: # Sinon, on ne peut pas déterminer la dimension, on saute ce lot
-                     logging.error("Impossible de déterminer la dimension des embeddings, saut du lot.")
-                     continue
-                logging.warning(f"Ajout de {num_failed} vecteurs nuls de dimension {dim} pour le lot échoué.")
-                all_embeddings.extend([np.zeros(dim, dtype='float32')] * num_failed)
-
-            except Exception as e:
-                logging.error(f"Erreur inattendue lors de la génération d'embeddings (lot {batch_num}): {e}")
-                # Gérer comme ci-dessus
                 num_failed = len(texts_to_embed)
                 if all_embeddings:
                     dim = len(all_embeddings[0])
                 else:
-                     logging.error("Impossible de déterminer la dimension des embeddings, saut du lot.")
-                     continue
+                    logging.error("Impossible de déterminer la dimension des embeddings, saut du lot.")
+                    continue
                 logging.warning(f"Ajout de {num_failed} vecteurs nuls de dimension {dim} pour le lot échoué.")
                 all_embeddings.extend([np.zeros(dim, dtype='float32')] * num_failed)
 
-
         if not all_embeddings:
-             logging.error("Aucun embedding n'a pu être généré.")
-             return None
+            logging.error("Aucun embedding n'a pu être généré.")
+            return None
 
         embeddings_array = np.array(all_embeddings).astype('float32')
         logging.info(f"Embeddings générés avec succès. Shape: {embeddings_array.shape}")
         return embeddings_array
 
+    # 🧠 LOGFIRE : version corrigée
+    @logfire.instrument("Construction complète de l'index FAISS")
     def build_index(self, documents: List[Dict[str, any]]):
-        """Construit l'index Faiss à partir des documents."""
         if not documents:
             logging.warning("Aucun document fourni pour construire l'index.")
             return
 
-        # --- Étape 1 : Découper en chunks ---
-        with span("Découpage des documents en chunks"):
+        # --- Étape 1 : Découpage des documents ---
+        with logfire.span("Découpage des documents en chunks"):
             self.document_chunks = self._split_documents_to_chunks(documents)
             if not self.document_chunks:
                 logging.error("Le découpage n'a produit aucun chunk. Impossible de construire l'index.")
                 return
             else:
                 logging.info(f"{len(self.document_chunks)} chunks créés à partir des documents.")
+                logfire.info("✅ Chunks créés", extra={"nombre_chunks": len(self.document_chunks)})
 
-        # --- Étape 2 : Générer les embeddings ---
-        with span("Génération des embeddings Mistral"):
+        # --- Étape 2 : Génération des embeddings ---
+        with logfire.span("Génération des embeddings via Mistral"):
             embeddings = self._generate_embeddings(self.document_chunks)
 
         if embeddings is None or embeddings.shape[0] != len(self.document_chunks):
             logging.error("Problème de génération d'embeddings. Le nombre d'embeddings ne correspond pas au nombre de chunks.")
-            # Nettoyer pour éviter un état incohérent
             self.document_chunks = []
             self.index = None
             if os.path.exists(FAISS_INDEX_FILE):
                 os.remove(FAISS_INDEX_FILE)
             if os.path.exists(DOCUMENT_CHUNKS_FILE):
                 os.remove(DOCUMENT_CHUNKS_FILE)
+            logfire.error("❌ Erreur génération embeddings", extra={"nb_chunks": len(self.document_chunks)})
             return
+        else:
+            logfire.info("✅ Embeddings générés", extra={
+                "dimension": embeddings.shape[1],
+                "nb_embeddings": embeddings.shape[0]
+            })
 
-        # --- Étape 3 : Créer l'index Faiss ---
-        with span("Création de l’index FAISS"):
+        # --- Étape 3 : Création de l’index FAISS ---
+        with logfire.span("Création de l’index FAISS"):
             dimension = embeddings.shape[1]
             logging.info(f"Création de l'index Faiss optimisé pour la similarité cosinus avec dimension {dimension}...")
 
-            # Normaliser les embeddings pour la similarité cosinus
             faiss.normalize_L2(embeddings)
-
-            # Créer un index pour la similarité cosinus (IndexFlatIP = produit scalaire)
             self.index = faiss.IndexFlatIP(dimension)
             self.index.add(embeddings)
-            logging.info(f"Index Faiss créé avec {self.index.ntotal} vecteurs.")
 
-        # --- Étape 4 : Sauvegarder ---
-        with span("Sauvegarde de l’index et des chunks"):
+            logging.info(f"Index Faiss créé avec {self.index.ntotal} vecteurs.")
+            logfire.info("✅ Index FAISS créé", extra={
+                "dimension": dimension,
+                "nb_vecteurs": self.index.ntotal
+            })
+
+        # --- Étape 4 : Sauvegarde ---
+        with logfire.span("Sauvegarde de l’index et des chunks"):
             self._save_index_and_chunks()
             logging.info("Index et chunks sauvegardés avec succès.")
+            logfire.info("💾 Sauvegarde effectuée", extra={
+                "fichier_index": FAISS_INDEX_FILE,
+                "fichier_chunks": DOCUMENT_CHUNKS_FILE
+            })
 
     def _save_index_and_chunks(self):
         """Sauvegarde l'index Faiss et la liste des chunks."""
@@ -220,89 +215,55 @@ class VectorStoreManager:
             logging.error(f"Erreur lors de la sauvegarde de l'index/chunks: {e}")
 
     def search(self, query_text: str, k: int = 5, min_score: float = None) -> List[Dict[str, any]]:
-        """
-        Recherche les k chunks les plus pertinents pour une requête.
-
-        Args:
-            query_text: Texte de la requête
-            k: Nombre de résultats à retourner
-            min_score: Score minimum (entre 0 et 1) pour inclure un résultat
-
-        Returns:
-            Liste des chunks pertinents avec leurs scores
-        """
+        """Recherche les k chunks les plus pertinents pour une requête."""
         if self.index is None or not self.document_chunks:
             logging.warning("Recherche impossible: l'index Faiss n'est pas chargé ou est vide.")
             return []
         if not MISTRAL_API_KEY:
-             logging.error("Recherche impossible: MISTRAL_API_KEY manquante pour générer l'embedding de la requête.")
-             return []
+            logging.error("Recherche impossible: MISTRAL_API_KEY manquante pour générer l'embedding de la requête.")
+            return []
 
         logging.info(f"Recherche des {k} chunks les plus pertinents pour: '{query_text}'")
         try:
-            # 1. Générer l'embedding de la requête
             response = self.mistral_client.embeddings(
                 model=EMBEDDING_MODEL,
-                input=[query_text] # La requête doit être une liste
+                input=[query_text]
             )
             query_embedding = np.array([response.data[0].embedding]).astype('float32')
-
-            # Normaliser l'embedding de la requête pour la similarité cosinus
             faiss.normalize_L2(query_embedding)
 
-            # 2. Rechercher dans l'index Faiss
-            # Pour IndexFlatIP: scores = produit scalaire (plus grand = meilleur)
-            # indices: index des chunks correspondants dans self.document_chunks
-            # Demander plus de résultats si un score minimum est spécifié
             search_k = k * 3 if min_score is not None else k
             scores, indices = self.index.search(query_embedding, search_k)
 
-            # 3. Formater les résultats
             results = []
-            if indices.size > 0: # Vérifier s'il y a des résultats
+            if indices.size > 0:
                 for i, idx in enumerate(indices[0]):
-                    if 0 <= idx < len(self.document_chunks): # Vérifier la validité de l'index
+                    if 0 <= idx < len(self.document_chunks):
                         chunk = self.document_chunks[idx]
-                        # Convertir le score en similarité (0-1)
-                        # Pour IndexFlatIP avec vecteurs normalisés, le score est déjà entre -1 et 1
-                        # On le convertit en pourcentage (0-100%)
                         raw_score = float(scores[0][i])
                         similarity = raw_score * 100
-
-                        # Filtrer les résultats en fonction du score minimum
-                        # Le min_score est entre 0 et 1, mais similarity est en pourcentage (0-100)
                         min_score_percent = min_score * 100 if min_score is not None else 0
                         if min_score is not None and similarity < min_score_percent:
-                            logging.debug(f"Document filtré (score {similarity:.2f}% < minimum {min_score_percent:.2f}%)")
                             continue
 
                         results.append({
-                            "score": similarity, # Score de similarité en pourcentage
-                            "raw_score": raw_score, # Score brut pour débogage
+                            "score": similarity,
+                            "raw_score": raw_score,
                             "text": chunk["text"],
-                            "metadata": chunk["metadata"] # Contient source, category, chunk_id_in_doc, start_index etc.
+                            "metadata": chunk["metadata"]
                         })
                     else:
-                        logging.warning(f"Index Faiss {idx} hors limites (taille des chunks: {len(self.document_chunks)}).")
+                        logging.warning(f"Index Faiss {idx} hors limites.")
 
-            # Trier par score (similarité la plus élevée en premier)
             results.sort(key=lambda x: x["score"], reverse=True)
-
-            # Limiter au nombre demandé (k) si nécessaire
             if len(results) > k:
                 results = results[:k]
 
-            if min_score is not None:
-                min_score_percent = min_score * 100
-                logging.info(f"{len(results)} chunks pertinents trouvés (score minimum: {min_score_percent:.2f}%).")
-            else:
-                logging.info(f"{len(results)} chunks pertinents trouvés.")
-
+            logging.info(f"{len(results)} chunks pertinents trouvés.")
             return results
 
         except MistralAPIException as e:
-            logging.error(f"Erreur API Mistral lors de la génération de l'embedding de la requête: {e}")
-            logging.error(f"  Détails: Status Code={e.status_code}, Message={e.message}")
+            logging.error(f"Erreur API Mistral lors de la génération de l'embedding : {e}")
             return []
         except Exception as e:
             logging.error(f"Erreur inattendue lors de la recherche: {e}")

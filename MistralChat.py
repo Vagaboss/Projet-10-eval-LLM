@@ -1,13 +1,13 @@
-# MistralChat.py (version RAG)
 import streamlit as st
 import os
 import logging
+import time
+import logfire
 from mistralai.client import MistralClient
 from mistralai.models.chat_completion import ChatMessage
 from dotenv import load_dotenv
-import time 
 
-# --- Importations depuis vos modules ---
+# --- Importations internes ---
 try:
     from utils.config import (
         MISTRAL_API_KEY, MODEL_NAME, SEARCH_K,
@@ -18,187 +18,155 @@ except ImportError as e:
     st.error(f"Erreur d'importation: {e}. Vérifiez la structure de vos dossiers et les fichiers dans 'utils'.")
     st.stop()
 
+# --- Configuration des logs ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Configuration du Logging ---
-# Note: Streamlit peut avoir sa propre gestion de logs. Configurer ici est une bonne pratique.
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
+# --- Initialisation Logfire ---
+logfire.configure()
+logfire.info("🚀 Démarrage de l’application MistralChat (RAG)")
 
-# --- Configuration de l'API Mistral ---
+# --- Configuration de l’API Mistral ---
 api_key = MISTRAL_API_KEY
 model = MODEL_NAME
 
 if not api_key:
-    st.error("Erreur : Clé API Mistral non trouvée (MISTRAL_API_KEY). Veuillez la définir dans le fichier .env.")
+    st.error("Erreur : Clé API Mistral non trouvée dans le .env.")
     st.stop()
 
 try:
     client = MistralClient(api_key=api_key)
-    logging.info("Client Mistral initialisé.")
+    logfire.info("Client Mistral initialisé avec succès", extra={"model": model})
 except Exception as e:
-    st.error(f"Erreur lors de l'initialisation du client Mistral : {e}")
-    logging.exception("Erreur initialisation client Mistral")
+    st.error(f"Erreur lors de l’initialisation du client Mistral : {e}")
+    logfire.error("Erreur client Mistral", extra={"exception": str(e)})
     st.stop()
 
-# --- Chargement du Vector Store (mis en cache) ---
-@st.cache_resource # Garde le manager chargé en mémoire pour la session
+# --- Chargement du Vector Store ---
+@st.cache_resource
 def get_vector_store_manager():
-    logging.info("Tentative de chargement du VectorStoreManager...")
-    try:
+    with logfire.span("Chargement du VectorStoreManager"):
         manager = VectorStoreManager()
-        # Vérifie si l'index a bien été chargé par le constructeur
         if manager.index is None or not manager.document_chunks:
-            st.error("L'index vectoriel ou les chunks n'ont pas pu être chargés.")
-            st.warning("Assurez-vous d'avoir exécuté 'python indexer.py' après avoir placé vos fichiers dans le dossier 'inputs'.")
-            logging.error("Index Faiss ou chunks non trouvés/chargés par VectorStoreManager.")
-            return None # Retourne None si échec
-        logging.info(f"VectorStoreManager chargé avec succès ({manager.index.ntotal} vecteurs).")
+            logfire.warning("VectorStoreManager vide ou non initialisé")
+            st.warning("L’index FAISS est vide. Lancez `python indexer.py` avant.")
+            return None
+        logfire.info("VectorStoreManager chargé", extra={"vecteurs": manager.index.ntotal})
         return manager
-    except FileNotFoundError:
-         st.error("Fichiers d'index ou de chunks non trouvés.")
-         st.warning("Veuillez exécuter 'python indexer.py' pour créer la base de connaissances.")
-         logging.error("FileNotFoundError lors de l'init de VectorStoreManager.")
-         return None
-    except Exception as e:
-        st.error(f"Erreur inattendue lors du chargement du VectorStoreManager: {e}")
-        logging.exception("Erreur chargement VectorStoreManager")
-        return None
 
 vector_store_manager = get_vector_store_manager()
 
-# --- Prompt Système pour RAG ---
-# Adaptez ce prompt selon vos besoins
-SYSTEM_PROMPT = f"""Tu es 'NBA Analyst AI', un assistant expert sur la ligue de basketball NBA.
-Ta mission est de répondre aux questions des fans en animant le débat.
+# --- Prompt système RAG ---
+SYSTEM_PROMPT = f"""Tu es 'NBA Analyst AI', un assistant expert sur la ligue NBA.
+Réponds de façon claire et analytique aux questions des fans.
 
 ---
 {{context_str}}
 ---
 
-QUESTION DU FAN:
+QUESTION DU FAN :
 {{question}}
 
-RÉPONSE DE L'ANALYSTE NBA:"""
+RÉPONSE DE L'ANALYSTE NBA :
+"""
 
-
-# --- Initialisation de l'historique de conversation ---
+# --- Initialisation de la session ---
 if "messages" not in st.session_state:
-    # Message d'accueil initial
-    st.session_state.messages = [{"role": "assistant", "content": f"Bonjour ! Je suis votre analyste IA pour la {NAME}. Posez-moi vos questions sur les équipes, les joueurs ou les statistiques, et je vous répondrai en me basant sur les données les plus récentes."}]
+    st.session_state.messages = [{
+        "role": "assistant",
+        "content": f"👋 Bonjour ! Je suis votre analyste IA pour la {NAME}. Posez-moi vos questions sur les équipes, les joueurs ou les stats !"
+    }]
 
-# --- Fonctions ---
-
+# --- Fonction de génération de réponse ---
+@logfire.instrument("Génération de réponse via Mistral")
 def generer_reponse(prompt_messages: list[ChatMessage]) -> str:
-    """
-    Envoie le prompt (qui inclut maintenant le contexte) à l'API Mistral.
-    """
+    """Envoie le prompt à l’API Mistral et retourne la réponse."""
     if not prompt_messages:
-         logging.warning("Tentative de génération de réponse avec un prompt vide.")
-         return "Je ne peux pas traiter une demande vide."
+        logfire.warning("Appel à generer_reponse avec prompt vide")
+        return "Je ne peux pas traiter une demande vide."
+
     try:
-        logging.info(f"Appel à l'API Mistral modèle '{model}' avec {len(prompt_messages)} message(s).")
-        # Log le contenu du prompt (peut être long) - commenter si trop verbeux
-        # logging.debug(f"Prompt envoyé à l'API: {prompt_messages}")
+        with logfire.span("Appel API Mistral"):
+            start_time = time.time()
+            response = client.chat(
+                model=model,
+                messages=prompt_messages,
+                temperature=0.1,
+            )
+            elapsed = round(time.time() - start_time, 2)
 
-        time.sleep(1.5)
-
-        response = client.chat(
-            model=model,
-            messages=prompt_messages,
-            temperature=0.1, # Température basse pour des réponses factuelles basées sur le contexte
-            # top_p=0.9,
-        )
         if response.choices and len(response.choices) > 0:
-            logging.info("Réponse reçue de l'API Mistral.")
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            logfire.info("Réponse Mistral générée", extra={
+                "temps_reponse_s": elapsed,
+                "longueur": len(content)
+            })
+            return content
         else:
-            logging.warning("L'API n'a pas retourné de choix valide.")
-            return "Désolé, je n'ai pas pu générer de réponse valide pour le moment."
+            logfire.warning("Réponse Mistral vide ou invalide")
+            return "Désolé, je n’ai pas pu générer de réponse valide."
+
     except Exception as e:
-        st.error(f"Erreur lors de l'appel à l'API Mistral: {e}")
-        logging.exception("Erreur API Mistral pendant client.chat")
-        return "Je suis désolé, une erreur technique m'empêche de répondre. Veuillez réessayer plus tard."
+        logfire.error("Erreur pendant l’appel API Mistral", extra={"exception": str(e)})
+        return f"Erreur Mistral : {e}"
 
-# --- Interface Utilisateur Streamlit ---
+# --- Interface Streamlit ---
 st.title(APP_TITLE)
-st.caption(f"Assistant virtuel pour {NAME} | Modèle: {model}")
+st.caption(f"Assistant virtuel NBA | Modèle : {model}")
 
-# Affichage des messages de l'historique (pour l'UI)
+# --- Historique de chat ---
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-# Zone de saisie utilisateur
+# --- Saisie utilisateur ---
 if prompt := st.chat_input(f"Posez votre question sur la {NAME}..."):
-    # 1. Ajouter et afficher le message de l'utilisateur
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.write(prompt)
+    with logfire.span("Nouvelle question utilisateur", extra={"question": prompt}):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.write(prompt)
 
-    # === Début de la logique RAG ===
+        # --- Étape 1 : Recherche FAISS ---
+        with logfire.span("Recherche de contexte dans Vector Store"):
+            if vector_store_manager is None:
+                logfire.error("VectorStoreManager non disponible")
+                st.error("Index FAISS non disponible.")
+                st.stop()
 
-    # 2. Vérifier si le Vector Store est disponible
-    if vector_store_manager is None:
-        st.error("Le service de recherche de connaissances n'est pas disponible. Impossible de traiter votre demande.")
-        logging.error("VectorStoreManager non disponible pour la recherche.")
-        # On arrête ici car on ne peut pas faire de RAG
-        st.stop()
+            start_time = time.time()
+            search_results = vector_store_manager.search(prompt, k=SEARCH_K)
+            elapsed = round(time.time() - start_time, 2)
+            logfire.info("Recherche FAISS terminée", extra={
+                "nb_chunks": len(search_results),
+                "duree_s": elapsed
+            })
 
-    # 3. Rechercher le contexte dans le Vector Store
-    try:
-        logging.info(f"Recherche de contexte pour la question: '{prompt}' avec k={SEARCH_K}")
-        search_results = vector_store_manager.search(prompt, k=SEARCH_K)
-        time.sleep(1)
-        logging.info(f"{len(search_results)} chunks trouvés dans le Vector Store.")
-
+        # --- Étape 2 : Préparation du contexte ---
         if search_results:
-            logging.info(f"--- Contextes utilisés pour la question : {prompt} ---")
-            for i, res in enumerate(search_results):
-                logging.info(f"[Contexte {i+1}] Score: {res['score']:.1f}% | Source: {res['metadata'].get('source', 'Inconnue')}")
-                logging.info(f"Contenu: {res['text'][:300]}...\n")
+            context_str = "\n\n---\n\n".join([
+                f"Source: {res['metadata'].get('source', 'Inconnue')} (Score: {res['score']:.1f}%)\nContenu: {res['text']}"
+                for res in search_results
+            ])
+            logfire.info("Contexte trouvé", extra={"nb_chunks": len(search_results)})
         else:
-            logging.warning("Aucun contexte pertinent trouvé.")
+            context_str = "Aucune information pertinente trouvée."
+            logfire.warning("Aucun contexte pertinent trouvé pour la question")
 
-    except Exception as e:
-        st.error(f"Une erreur est survenue lors de la recherche d'informations pertinentes: {e}")
-        logging.exception(f"Erreur pendant vector_store_manager.search pour la query: {prompt}")
-        search_results = [] # On continue sans contexte si la recherche échoue
+        # --- Étape 3 : Génération de la réponse ---
+        with logfire.span("Appel Mistral avec contexte"):
+            final_prompt = SYSTEM_PROMPT.format(context_str=context_str, question=prompt)
+            messages_for_api = [ChatMessage(role="user", content=final_prompt)]
+            response_content = generer_reponse(messages_for_api)
 
-    # 4. Formater le contexte pour le prompt LLM
-    context_str = "\n\n---\n\n".join([
-        f"Source: {res['metadata'].get('source', 'Inconnue')} (Score: {res['score']:.1f}%)\nContenu: {res['text']}"
-        for res in search_results
-    ])
+        # --- Étape 4 : Affichage et historique ---
+        with st.chat_message("assistant"):
+            st.write(response_content)
+        st.session_state.messages.append({"role": "assistant", "content": response_content})
 
-    if not search_results:
-        context_str = "Aucune information pertinente trouvée dans la base de connaissances pour cette question."
-        logging.warning(f"Aucun contexte trouvé pour la query: {prompt}")
+        logfire.info("Réponse affichée", extra={
+            "question": prompt,
+            "réponse_partielle": response_content[:150]
+        })
 
-    # 5. Construire le prompt final pour l'API Mistral en utilisant le System Prompt RAG
-    final_prompt_for_llm = SYSTEM_PROMPT.format(context_str=context_str, question=prompt)
-
-    # Créer la liste de messages pour l'API (juste le prompt système/utilisateur combiné)
-    messages_for_api = [
-        # On pourrait séparer system et user, mais Mistral gère bien un long message user structuré
-        ChatMessage(role="user", content=final_prompt_for_llm)
-    ]
-
-    # === Fin de la logique RAG ===
-
-
-    # 6. Afficher indicateur + Générer la réponse de l'assistant via LLM
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        message_placeholder.text("...") # Indicateur simple
-
-        # Génération de la réponse de l'assistant en utilisant le prompt augmenté
-        response_content = generer_reponse(messages_for_api)
-
-        # Affichage de la réponse complète
-        message_placeholder.write(response_content)
-
-    # 7. Ajouter la réponse de l'assistant à l'historique (pour affichage UI)
-    st.session_state.messages.append({"role": "assistant", "content": response_content})
-
-# Petit pied de page optionnel
+# --- Pied de page ---
 st.markdown("---")
-st.caption("Powered by Mistral AI & Faiss | Data-driven NBA Insights")
+st.caption("⚙️ Powered by Mistral AI & FAISS | Tracé en direct avec Pydantic Logfire")
