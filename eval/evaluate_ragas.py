@@ -42,10 +42,21 @@ Question : {question}
 Réponse :
 """
 
+# --- Gestion des délais et de la charge API ---
+def wait_before_next_request(min_delay=3, max_delay=6):
+    """Pause aléatoire entre les appels API pour éviter le rate limit."""
+    delay = random.uniform(min_delay, max_delay)
+    logging.info(f"⏳ Pause de {delay:.1f} secondes avant la prochaine requête...")
+    time.sleep(delay)
+
+
 def get_answer_and_context(question: str, max_retries=5):
     """Récupère le contexte et génère une réponse avec Mistral"""
     for attempt in range(1, max_retries + 1):
         try:
+            # Petite pause avant chaque recherche de contexte
+            wait_before_next_request(2, 4)
+
             logging.info(f"Recherche de contexte pour la question : {question}")
             search_results = vector_store_manager.search(question, k=SEARCH_K)
 
@@ -57,7 +68,8 @@ def get_answer_and_context(question: str, max_retries=5):
             final_prompt = SYSTEM_PROMPT.format(context_str=context_str, question=question)
             messages = [ChatMessage(role="user", content=final_prompt)]
 
-            time.sleep(random.uniform(2.5, 4.5))
+            # Délai avant l'appel chat Mistral
+            wait_before_next_request(3, 6)
             response = client.chat(model=MODEL_NAME, messages=messages, temperature=0.1)
             answer = response.choices[0].message.content if response.choices else "Réponse vide."
             return answer, context_str
@@ -88,6 +100,10 @@ for i, item in enumerate(eval_data, 1):
     q = item["question"]
     gt = item["ground_truth"]
     logging.info(f"\n🧠 ({i}/{len(eval_data)}) Question : {q}")
+
+    # Pause entre chaque question pour éviter 429
+    wait_before_next_request(2, 5)
+
     answer, ctx = get_answer_and_context(q)
     questions.append(q)
     answers.append(answer)
@@ -137,5 +153,6 @@ with open(RESULTS_PATH, "w", encoding="utf-8") as f:
     json.dump(results_data, f, indent=4, ensure_ascii=False)
 
 logging.info(f"✅ Résultats enregistrés dans {RESULTS_PATH}")
+
 
 
