@@ -21,3 +21,5 @@ nba_api
 langchain-mistralai
 pydantic-logfire
 logfire
+psycopg2-binary
+openpyxl
