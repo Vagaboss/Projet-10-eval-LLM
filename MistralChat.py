@@ -1,8 +1,13 @@
+"""
+MistralChat.py — Agent RAG + SQL pour analyse NBA
+"""
+
 import streamlit as st
 import os
 import logging
 import time
 import logfire
+import re
 from mistralai.client import MistralClient
 from mistralai.models.chat_completion import ChatMessage
 from dotenv import load_dotenv
@@ -14,18 +19,17 @@ try:
         APP_TITLE, NAME
     )
     from utils.vector_store import VectorStoreManager
+    from db.sql_tool import NBAQueryTool
 except ImportError as e:
-    st.error(f"Erreur d'importation: {e}. Vérifiez la structure de vos dossiers et les fichiers dans 'utils'.")
+    st.error(f"Erreur d'importation: {e}")
     st.stop()
 
 # --- Configuration des logs ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# --- Initialisation Logfire ---
 logfire.configure()
-logfire.info("🚀 Démarrage de l’application MistralChat (RAG)")
+logfire.info("🚀 Démarrage de l’application MistralChat (RAG + SQL)")
 
-# --- Configuration de l’API Mistral ---
+# --- Initialisation Mistral ---
 api_key = MISTRAL_API_KEY
 model = MODEL_NAME
 
@@ -35,138 +39,109 @@ if not api_key:
 
 try:
     client = MistralClient(api_key=api_key)
-    logfire.info("Client Mistral initialisé avec succès", extra={"model": model})
+    logfire.info("✅ Client Mistral initialisé", extra={"model": model})
 except Exception as e:
     st.error(f"Erreur lors de l’initialisation du client Mistral : {e}")
-    logfire.error("Erreur client Mistral", extra={"exception": str(e)})
     st.stop()
 
-# --- Chargement du Vector Store ---
-@st.cache_resource
-def get_vector_store_manager():
-    with logfire.span("Chargement du VectorStoreManager"):
-        manager = VectorStoreManager()
-        if manager.index is None or not manager.document_chunks:
-            logfire.warning("VectorStoreManager vide ou non initialisé")
-            st.warning("L’index FAISS est vide. Lancez `python indexer.py` avant.")
-            return None
-        logfire.info("VectorStoreManager chargé", extra={"vecteurs": manager.index.ntotal})
-        return manager
+# --- Initialisation des outils ---
+sql_tool = NBAQueryTool()
+vector_store_manager = VectorStoreManager()
 
-vector_store_manager = get_vector_store_manager()
+# --- Few-Shot SQL Prompts ---
+FEW_SHOT_SQL = """
+Voici quelques exemples de requêtes SQL correctes pour la base NBA :
 
-# --- Prompt système RAG ---
-SYSTEM_PROMPT = f"""Tu es 'NBA Analyst AI', un assistant expert sur la ligue NBA.
-Réponds de façon claire et analytique aux questions des fans.
+Question : Quels joueurs ont le meilleur pourcentage à 3 points ?
+SQL : SELECT p.name, s.three_pct FROM players p JOIN stats s ON p.player_id = s.player_id ORDER BY s.three_pct DESC LIMIT 5;
+
+Question : Quelle équipe a le plus de victoires ?
+SQL : SELECT team_name, wins FROM teams ORDER BY wins DESC LIMIT 1;
+
+Question : Quels joueurs ont fait le plus de double-doubles ?
+SQL : SELECT p.name, s.double_doubles FROM players p JOIN stats s ON p.player_id = s.player_id ORDER BY s.double_doubles DESC LIMIT 10;
+
+Question : Quelle équipe a le meilleur rating offensif moyen ?
+SQL : SELECT team_name, offensive_rating FROM teams ORDER BY offensive_rating DESC LIMIT 5;
 
 ---
-{{context_str}}
----
-
-QUESTION DU FAN :
-{{question}}
-
-RÉPONSE DE L'ANALYSTE NBA :
+À partir de la question suivante, génère uniquement la requête SQL la plus pertinente sans texte explicatif :
 """
 
-# --- Initialisation de la session ---
-if "messages" not in st.session_state:
-    st.session_state.messages = [{
-        "role": "assistant",
-        "content": f"👋 Bonjour ! Je suis votre analyste IA pour la {NAME}. Posez-moi vos questions sur les équipes, les joueurs ou les stats !"
-    }]
+# --- Détection de question chiffrée ---
+def is_sql_question(prompt: str) -> bool:
+    """
+    Détecte si une question nécessite des données chiffrées.
+    """
+    patterns = [
+        r"\b(moyenne|pourcentage|classement|points|rebonds|passes|victoires|matchs|bilan)\b",
+        r"\b(top|meilleur|plus|record)\b",
+        r"\b(stat|score|équipe|joueur)\b"
+    ]
+    return any(re.search(p, prompt.lower()) for p in patterns)
 
-# --- Fonction de génération de réponse ---
-@logfire.instrument("Génération de réponse via Mistral")
-def generer_reponse(prompt_messages: list[ChatMessage]) -> str:
-    """Envoie le prompt à l’API Mistral et retourne la réponse."""
-    if not prompt_messages:
-        logfire.warning("Appel à generer_reponse avec prompt vide")
-        return "Je ne peux pas traiter une demande vide."
-
+# --- Génération via Mistral ---
+def mistral_generate(prompt: str) -> str:
     try:
-        with logfire.span("Appel API Mistral"):
-            start_time = time.time()
-            response = client.chat(
-                model=model,
-                messages=prompt_messages,
-                temperature=0.1,
-            )
-            elapsed = round(time.time() - start_time, 2)
-
-        if response.choices and len(response.choices) > 0:
-            content = response.choices[0].message.content
-            logfire.info("Réponse Mistral générée", extra={
-                "temps_reponse_s": elapsed,
-                "longueur": len(content)
-            })
-            return content
-        else:
-            logfire.warning("Réponse Mistral vide ou invalide")
-            return "Désolé, je n’ai pas pu générer de réponse valide."
-
+        response = client.chat(
+            model=model,
+            messages=[ChatMessage(role="user", content=prompt)],
+            temperature=0.1,
+        )
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        logfire.error("Erreur pendant l’appel API Mistral", extra={"exception": str(e)})
-        return f"Erreur Mistral : {e}"
+        logging.error(f"Erreur API Mistral : {e}")
+        return f"Erreur API Mistral : {e}"
 
 # --- Interface Streamlit ---
 st.title(APP_TITLE)
-st.caption(f"Assistant virtuel NBA | Modèle : {model}")
+st.caption(f"Assistant NBA intelligent | Modèle : {model}")
 
-# --- Historique de chat ---
+if "messages" not in st.session_state:
+    st.session_state.messages = [{"role": "assistant", "content": "👋 Bonjour ! Pose-moi des questions sur les joueurs, équipes ou statistiques NBA."}]
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-# --- Saisie utilisateur ---
-if prompt := st.chat_input(f"Posez votre question sur la {NAME}..."):
-    with logfire.span("Nouvelle question utilisateur", extra={"question": prompt}):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
+# --- Entrée utilisateur ---
+if prompt := st.chat_input("Pose ta question sur la NBA..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
 
-        # --- Étape 1 : Recherche FAISS ---
-        with logfire.span("Recherche de contexte dans Vector Store"):
-            if vector_store_manager is None:
-                logfire.error("VectorStoreManager non disponible")
-                st.error("Index FAISS non disponible.")
-                st.stop()
+    # === Étape 1 : Détection ===
+    if is_sql_question(prompt):
+        logfire.info("🔎 Question détectée comme chiffrée → appel du SQL Tool")
+        few_shot_prompt = FEW_SHOT_SQL + f"\nQuestion : {prompt}\nSQL :"
+        generated_sql = mistral_generate(few_shot_prompt)
 
-            start_time = time.time()
-            search_results = vector_store_manager.search(prompt, k=SEARCH_K)
-            elapsed = round(time.time() - start_time, 2)
-            logfire.info("Recherche FAISS terminée", extra={
-                "nb_chunks": len(search_results),
-                "duree_s": elapsed
-            })
+        st.markdown(f"```sql\n{generated_sql}\n```")
 
-        # --- Étape 2 : Préparation du contexte ---
-        if search_results:
-            context_str = "\n\n---\n\n".join([
-                f"Source: {res['metadata'].get('source', 'Inconnue')} (Score: {res['score']:.1f}%)\nContenu: {res['text']}"
-                for res in search_results
-            ])
-            logfire.info("Contexte trouvé", extra={"nb_chunks": len(search_results)})
-        else:
-            context_str = "Aucune information pertinente trouvée."
-            logfire.warning("Aucun contexte pertinent trouvé pour la question")
-
-        # --- Étape 3 : Génération de la réponse ---
-        with logfire.span("Appel Mistral avec contexte"):
-            final_prompt = SYSTEM_PROMPT.format(context_str=context_str, question=prompt)
-            messages_for_api = [ChatMessage(role="user", content=final_prompt)]
-            response_content = generer_reponse(messages_for_api)
-
-        # --- Étape 4 : Affichage et historique ---
+        # Exécution de la requête
+        sql_result = sql_tool._run(generated_sql)
         with st.chat_message("assistant"):
-            st.write(response_content)
-        st.session_state.messages.append({"role": "assistant", "content": response_content})
+            st.write(sql_result)
 
-        logfire.info("Réponse affichée", extra={
-            "question": prompt,
-            "réponse_partielle": response_content[:150]
-        })
+        st.session_state.messages.append({"role": "assistant", "content": sql_result})
+    else:
+        # === Étape 2 : RAG standard ===
+        logfire.info("🧠 Question détectée comme contextuelle → RAG FAISS")
+        with logfire.span("Recherche contexte FAISS"):
+            results = vector_store_manager.search(prompt, k=SEARCH_K)
+            context = "\n\n---\n\n".join([res["text"] for res in results]) if results else "Aucune information trouvée."
 
-# --- Pied de page ---
+        rag_prompt = f"""Tu es un expert NBA.
+{context}
+
+Question : {prompt}
+Réponse :"""
+        response = mistral_generate(rag_prompt)
+
+        with st.chat_message("assistant"):
+            st.write(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})
+
 st.markdown("---")
-st.caption("⚙️ Powered by Mistral AI & FAISS | Tracé en direct avec Pydantic Logfire")
+st.caption("⚙️ Powered by Mistral AI, FAISS & PostgreSQL | Agent RAG + SQL par Logfire")
+

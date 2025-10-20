@@ -138,16 +138,20 @@ def create_nba_schema():
     """)
     logging.info("✅ Table 'player_match_stats' créée.")
 
+    
     # --- Table REPORTS ---
     cursor.execute("""
         CREATE TABLE reports (
             report_id SERIAL PRIMARY KEY,
-            report_type VARCHAR(50),
-            description TEXT,
-            team_code VARCHAR(10),
+            report_type VARCHAR(50) NOT NULL CHECK (report_type IN ('player', 'team', 'match')),
+            title VARCHAR(200),
+            content TEXT NOT NULL,
             player_id INTEGER REFERENCES players(player_id) ON DELETE CASCADE,
+            team_id INTEGER REFERENCES teams(team_id) ON DELETE CASCADE,
+            match_id INTEGER REFERENCES matches(match_id) ON DELETE CASCADE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (team_code) REFERENCES teams (team_code) ON DELETE SET NULL
+            source VARCHAR(50) DEFAULT 'system',  -- 'system', 'user', 'llm', etc.
+            confidence REAL CHECK (confidence BETWEEN 0 AND 1)
         );
     """)
     logging.info("✅ Table 'reports' créée.")
