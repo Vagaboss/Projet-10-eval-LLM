@@ -50,21 +50,109 @@ vector_store_manager = VectorStoreManager()
 
 # --- Few-Shot SQL Prompts ---
 FEW_SHOT_SQL = """
-Voici quelques exemples de requêtes SQL correctes pour la base NBA :
+Voici des exemples de correspondance entre des questions NBA et des requêtes SQL valides.
+Utilise toujours les bonnes colonnes en fonction de la statistique demandée.
 
-Question : Quels joueurs ont le meilleur pourcentage à 3 points ?
-SQL : SELECT p.name, s.three_pct FROM players p JOIN stats s ON p.player_id = s.player_id ORDER BY s.three_pct DESC LIMIT 5;
+EXEMPLES :
 
-Question : Quelle équipe a le plus de victoires ?
-SQL : SELECT team_name, wins FROM teams ORDER BY wins DESC LIMIT 1;
-
-Question : Quels joueurs ont fait le plus de double-doubles ?
-SQL : SELECT p.name, s.double_doubles FROM players p JOIN stats s ON p.player_id = s.player_id ORDER BY s.double_doubles DESC LIMIT 10;
-
-Question : Quelle équipe a le meilleur rating offensif moyen ?
-SQL : SELECT team_name, offensive_rating FROM teams ORDER BY offensive_rating DESC LIMIT 5;
+Question : Qui a marqué le plus de points cette saison ?
+SQL :
+SELECT p.name, s.points
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.points DESC
+LIMIT 5;
 
 ---
+
+Question : Quels sont les joueurs avec le meilleur pourcentage à 3 points ?
+SQL :
+SELECT p.name, s.three_pct
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.three_pct DESC
+LIMIT 5;
+
+---
+
+Question : Quels sont les meilleurs passeurs de la ligue ?
+SQL :
+SELECT p.name, s.assists
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.assists DESC
+LIMIT 5;
+
+---
+
+Question : Quels sont les meilleurs rebondeurs ?
+SQL :
+SELECT p.name, s.rebounds
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.rebounds DESC
+LIMIT 5;
+
+---
+
+Question : Quels joueurs ont le meilleur pourcentage au tir global ?
+SQL :
+SELECT p.name, s.fg_pct
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.fg_pct DESC
+LIMIT 5;
+
+---
+
+Question : Quels sont les meilleurs défenseurs selon les contres ?
+SQL :
+SELECT p.name, s.blocks
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.blocks DESC
+LIMIT 5;
+
+---
+
+Question : Quels joueurs ont le meilleur nombre d'interceptions ?
+SQL :
+SELECT p.name, s.steals
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.steals DESC
+LIMIT 5;
+
+---
+
+Question : Quelle équipe a le meilleur ratio de victoire ?
+SQL :
+SELECT team_name, wins, losses, ROUND(wins::float / (wins + losses), 3) AS win_ratio
+FROM teams
+ORDER BY win_ratio DESC
+LIMIT 5;
+
+---
+
+Question : Quelle équipe a la meilleure évaluation offensive ?
+SQL :
+SELECT team_name, offensive_rating
+FROM teams
+ORDER BY offensive_rating DESC
+LIMIT 5;
+
+---
+
+Question : Qui a le meilleur différentiel net (NETRTG) ?
+SQL :
+SELECT p.name, s.net_rating
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.net_rating DESC
+LIMIT 5;
+
+---
+
 À partir de la question suivante, génère uniquement la requête SQL la plus pertinente sans texte explicatif :
 """
 

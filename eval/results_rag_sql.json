@@ -1,0 +1,40 @@
+{
+    "metrics": {
+        "faithfulness": 0.9166666666666666,
+        "answer_similarity": 0.7188775142953339,
+        "context_precision": 0.39999999996,
+        "context_recall": 0.2
+    },
+    "details": [
+        {
+            "question": "Quel joueur a le meilleur % à 3 points sur les 5 derniers matchs ?",
+            "answer": "🧠 \"Voici un résultat surprenant : Mac McClung, connu pour son adresse à trois points, affiche ici un pourcentage de 0% sur les dernières statistiques disponibles. Cela pourrait indiquer une période de disette inhabituelle ou une sélection de données très spécifique. À suivre de près pour voir si cette tendance se confirme !\"\n\n| name        |   three_pct |\n|:------------|------------:|\n| Mac McClung |           0 |",
+            "ground_truth": "Skal Labissiere 100.00 (1/1)\nAndre Jackson Jr. 100.00 (1/1)\nAlondes Williams 100.00 (1/1)\nNic Claxton 100.00 (2/2)\nPJ Dozier 100.00 (1/1)",
+            "context": "Résultat SQL : 🧠 \"Voici un résultat surprenant : Mac McClung, connu pour son adresse à trois points, affiche ici un pourcentage de 0% sur les dernières statistiques disponibles. Cela pourrait indiquer une période de disette inhabituelle ou une sélection de données très spécifique. À suivre de près pour voir si cette tendance se confirme !\"\n\n| name        |   three_pct |\n|:------------|------------:|\n| Mac McClung |           0 |"
+        },
+        {
+            "question": "Quel joueur a le meilleur pourcentage de réussite à 3 points ?",
+            "answer": "🧠 \"Incroyable ! Alondes Williams affiche un pourcentage à 3 points à 100%, ce qui signifie qu'il a marqué tous ses tirs à trois points tentés cette saison. Une performance parfaite, mais attention, il faut vérifier le nombre de tentatives pour savoir si c'est une statistique solide ou un coup de chance sur quelques tirs.\"\n\n| name             |   three_pct |\n|:-----------------|------------:|\n| Alondes Williams |         100 |",
+            "ground_truth": "Alondes Williams",
+            "context": "Résultat SQL : 🧠 \"Incroyable ! Alondes Williams affiche un pourcentage à 3 points à 100%, ce qui signifie qu'il a marqué tous ses tirs à trois points tentés cette saison. Une performance parfaite, mais attention, il faut vérifier le nombre de tentatives pour savoir si c'est une statistique solide ou un coup de chance sur quelques tirs.\"\n\n| name             |   three_pct |\n|:-----------------|------------:|\n| Alondes Williams |         100 |"
+        },
+        {
+            "question": "Compare les statistiques de rebonds de l’équipe Lakers à domicile et à l’extérieur",
+            "answer": "Erreur SQL : Execution failed on sql 'SELECT\n    'Home' AS game_type,\n    AVG(pms.rebounds) AS avg_rebounds\nFROM\n    matches m\nJOIN\n    player_match_stats pms ON m.match_id = pms.match_id\nJOIN\n    players p ON pms.player_id = p.player_id\nWHERE\n    m.team_home = 'LAL'\n    AND p.team_code = 'LAL'\n\nUNION ALL\n\nSELECT\n    'Away' AS game_type,\n    AVG(pms.rebounds) AS avg_rebounds\nFROM\n    matches m\nJOIN\n    player_match_stats pms ON m.match_id = pms.match_id\nJOIN\n    players p ON pms.player_id = p.player_id\nWHERE\n    m.team_away = 'LAL'\n    AND p.team_code = 'LAL';': ERREUR:  la colonne m.team_home n'existe pas\nLINE 11:     m.team_home = 'LAL'\n             ^\nHINT:  Peut-être que vous souhaitiez référencer la colonne « p.team_code ».\n",
+            "ground_truth": "📊 Saison 2024-25 - Los Angeles Lakers\n🏠 Rebond à domicile  : 1920.00\n🚌 Rebond à l’extérieur : 1886.00",
+            "context": "Résultat SQL : Erreur SQL : Execution failed on sql 'SELECT\n    'Home' AS game_type,\n    AVG(pms.rebounds) AS avg_rebounds\nFROM\n    matches m\nJOIN\n    player_match_stats pms ON m.match_id = pms.match_id\nJOIN\n    players p ON pms.player_id = p.player_id\nWHERE\n    m.team_home = 'LAL'\n    AND p.team_code = 'LAL'\n\nUNION ALL\n\nSELECT\n    'Away' AS game_type,\n    AVG(pms.rebounds) AS avg_rebounds\nFROM\n    matches m\nJOIN\n    player_match_stats pms ON m.match_id = pms.match_id\nJOIN\n    players p ON pms.player_id = p.player_id\nWHERE\n    m.team_away = 'LAL'\n    AND p.team_code = 'LAL';': ERREUR:  la colonne m.team_home n'existe pas\nLINE 11:     m.team_home = 'LAL'\n             ^\nHINT:  Peut-être que vous souhaitiez référencer la colonne « p.team_code ».\n"
+        },
+        {
+            "question": "Qui a marqué le plus de points sur les 10 derniers matchs ?",
+            "answer": "Erreur SQL : Execution failed on sql 'SELECT p.name, SUM(pms.points) AS total_points\nFROM player_match_stats pms\nJOIN players p ON pms.player_id = p.player_id\nJOIN matches m ON pms.match_id = m.match_id\nWHERE m.match_date >= CURRENT_DATE - INTERVAL '10 days'\nGROUP BY p.name\nORDER BY total_points DESC\nLIMIT 1;': ERREUR:  la colonne m.match_date n'existe pas\nLINE 5: WHERE m.match_date >= CURRENT_DATE - INTERVAL '10 days'\n              ^\n",
+            "ground_truth": "Nikola Jokić - 333 points",
+            "context": "Résultat SQL : Erreur SQL : Execution failed on sql 'SELECT p.name, SUM(pms.points) AS total_points\nFROM player_match_stats pms\nJOIN players p ON pms.player_id = p.player_id\nJOIN matches m ON pms.match_id = m.match_id\nWHERE m.match_date >= CURRENT_DATE - INTERVAL '10 days'\nGROUP BY p.name\nORDER BY total_points DESC\nLIMIT 1;': ERREUR:  la colonne m.match_date n'existe pas\nLINE 5: WHERE m.match_date >= CURRENT_DATE - INTERVAL '10 days'\n              ^\n"
+        },
+        {
+            "question": "Quel joueur a marqué le plus de points cette saison ?",
+            "answer": "Aucun résultat trouvé pour cette requête.",
+            "ground_truth": "Shai Gilgeous-Alexander",
+            "context": "Résultat SQL : Aucun résultat trouvé pour cette requête."
+        }
+    ]
+}

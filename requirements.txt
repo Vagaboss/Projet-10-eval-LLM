@@ -24,3 +24,5 @@ logfire
 psycopg2-binary
 openpyxl
 tabulate
+matplotlib
+reportlab
