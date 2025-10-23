@@ -1,13 +1,14 @@
 import psycopg2
 import pandas as pd
 import logging
+import re
 from langchain.tools import BaseTool
 from mistralai.client import MistralClient
 from mistralai.models.chat_completion import ChatMessage
 import os
 from dotenv import load_dotenv
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION LOGGING ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 load_dotenv()
@@ -19,7 +20,7 @@ if not MISTRAL_API_KEY:
 DB_CONFIG = {
     "dbname": "nba_db",
     "user": "postgres",
-    "password": "naruto",  # adapte à ton mot de passe
+    "password": "naruto",  # adapte ton mot de passe
     "host": "localhost",
     "port": "5432"
 }
@@ -34,24 +35,44 @@ except Exception as e:
     MODEL_NAME = None
     logging.warning(f"⚠️ Impossible d'initialiser Mistral : {e}")
 
+# --- SYNONYMES DE COLONNES ---
+COLUMN_SYNONYMS = {
+    "free_throw_pct": "ft_pct",
+    "free_throw_percentage": "ft_pct",
+    "three_points_pct": "three_pct",
+    "three_points_percentage": "three_pct",
+    "field_goal_pct": "fg_pct",
+    "field_goals_pct": "fg_pct",
+    "rebounds_per_game": "rebounds",
+    "assists_per_game": "assists",
+    "points_per_game": "points",
+    "netrating": "net_rating",
+    "offrating": "offensive_rating",
+    "defrating": "defensive_rating"
+}
+
 
 # --- OUTIL SQL PRINCIPAL ---
 class NBAQueryTool(BaseTool):
     name: str = "NBA SQL Tool"
     description: str = (
-        "Permet d'exécuter des requêtes SQL sur la base NBA PostgreSQL "
-        "et de générer une brève explication automatique du résultat."
+        "Permet d'exécuter des requêtes SQL sur la base NBA PostgreSQL, "
+        "corrige les erreurs de colonnes et génère une explication automatique du résultat."
     )
 
     def _run(self, query: str) -> str:
-        """
-        Exécute une requête SQL sur la base NBA et génère une explication via Mistral.
-        """
+        """Exécute une requête SQL sur la base NBA et génère une explication."""
         try:
             # --- Nettoyage de la requête ---
             cleaned_query = query.strip().replace("```sql", "").replace("```", "").strip()
 
-            # --- Connexion et exécution ---
+            # --- Correction automatique des colonnes ---
+            for wrong, correct in COLUMN_SYNONYMS.items():
+                if re.search(rf"\b{wrong}\b", cleaned_query, re.IGNORECASE):
+                    logging.info(f"🔧 Correction : '{wrong}' → '{correct}'")
+                    cleaned_query = re.sub(rf"\b{wrong}\b", correct, cleaned_query, flags=re.IGNORECASE)
+
+            # --- Connexion ---
             conn = psycopg2.connect(**DB_CONFIG)
             df = pd.read_sql_query(cleaned_query, conn)
             conn.close()
@@ -59,13 +80,11 @@ class NBAQueryTool(BaseTool):
             if df.empty:
                 return "Aucun résultat trouvé pour cette requête."
 
-            # --- Génération de l’explication ---
+            # --- Explication ---
             explanation = self._generate_explanation(cleaned_query, df)
-
-            # --- Formatage du tableau ---
             result_md = df.head(10).to_markdown(index=False)
-            logging.info("✅ Requête exécutée avec succès :\n%s", cleaned_query)
 
+            logging.info("✅ Requête exécutée avec succès :\n%s", cleaned_query)
             return f"{explanation}\n\n{result_md}"
 
         except Exception as e:
@@ -77,19 +96,18 @@ class NBAQueryTool(BaseTool):
 
     # --- 🧠 Génération d'explication dynamique ---
     def _generate_explanation(self, query: str, df: pd.DataFrame) -> str:
-        """
-        Crée une brève explication du résultat SQL.
-        Si Mistral est disponible, génère une explication naturelle.
-        Sinon, utilise une version locale simple.
-        """
-        # Mode local (fallback)
+        """Crée une brève explication du résultat SQL."""
         if client is None:
             return self._generate_simple_explanation(query)
 
-        # Contexte : tableau des 5 premières lignes
         context = df.head(5).to_markdown(index=False)
         prompt = f"""
-Tu es un expert en analyse NBA. Voici une requête SQL exécutée sur une base de données NBA :
+Tu es un expert en analyse NBA. Voici une requête SQL exécutée sur une base de données NBA.
+
+SCHÉMA DES TABLES :
+- players(player_id, name, team_code, age)
+- stats(player_id, games_played, points, rebounds, assists, steals, blocks, turnovers, fg_pct, three_pct, ft_pct, offensive_rating, defensive_rating, net_rating, pace, pie)
+- teams(team_id, team_code, team_name, wins, losses, offensive_rating, defensive_rating, net_rating)
 
 REQUÊTE :
 {query}
@@ -97,9 +115,8 @@ REQUÊTE :
 RÉSULTATS :
 {context}
 
-Rédige une courte explication (2-3 phrases maximum) en français,
-comme si tu étais un commentateur NBA, expliquant ce que montrent ces résultats.
-Ne redonne pas le code SQL ni le tableau.
+Rédige une explication courte et claire (2 phrases max) pour un public de fans NBA.
+Ne répète pas le code SQL.
 """
 
         try:
@@ -112,40 +129,38 @@ Ne redonne pas le code SQL ni le tableau.
                 return f"🧠 {response.choices[0].message.content.strip()}"
         except Exception as e:
             logging.warning(f"⚠️ Erreur pendant la génération de l'explication Mistral : {e}")
-
-        # Fallback si erreur API
         return self._generate_simple_explanation(query)
 
-    # --- 🔤 Explication locale simple si pas d'API ---
+    # --- Fallback local si Mistral indisponible ---
     def _generate_simple_explanation(self, query: str) -> str:
         if "three_pct" in query:
-            return "🏀 Voici les joueurs avec le meilleur pourcentage à 3 points cette saison :"
+            return "🏀 Voici les joueurs avec le meilleur pourcentage à 3 points :"
         elif "points" in query and "three_pct" not in query:
-            return "🔥 Voici les meilleurs scoreurs de la ligue :"
+            return "🔥 Voici les meilleurs scoreurs :"
         elif "assists" in query:
-            return "🎯 Voici les meilleurs passeurs de la ligue :"
+            return "🎯 Voici les meilleurs passeurs :"
         elif "rebounds" in query:
             return "🧱 Voici les meilleurs rebondeurs :"
         elif "blocks" in query:
-            return "🛡️ Voici les meilleurs contreurs (défenseurs) :"
+            return "🛡️ Voici les meilleurs contreurs :"
         elif "steals" in query:
-            return "👀 Voici les joueurs les plus performants en interceptions :"
+            return "👀 Voici les meilleurs intercepteurs :"
         elif "offensive_rating" in query:
-            return "⚡ Voici les équipes avec la meilleure efficacité offensive :"
+            return "⚡ Voici les équipes les plus efficaces offensivement :"
         elif "defensive_rating" in query:
-            return "🧱 Voici les équipes les plus solides en défense :"
+            return "🧱 Voici les équipes les plus solides défensivement :"
         elif "net_rating" in query:
-            return "📈 Voici les joueurs avec le meilleur différentiel net (Net Rating) :"
+            return "📈 Voici les joueurs avec le meilleur différentiel net :"
         else:
             return "📊 Voici le résultat de ta requête SQL :"
 
 
 # --- TEST LOCAL ---
 if __name__ == "__main__":
-    logging.info("🔍 Test local du SQL Tool avec explication dynamique...")
+    logging.info("🔍 Test local du SQL Tool (avec correction + explication)...")
     tool = NBAQueryTool()
     q = """
-    SELECT p.name, s.points, s.fg_pct, s.three_pct
+    SELECT p.name, s.points, s.fg_pct, s.three_points_percentage
     FROM players p
     JOIN stats s ON p.player_id = s.player_id
     ORDER BY s.points DESC

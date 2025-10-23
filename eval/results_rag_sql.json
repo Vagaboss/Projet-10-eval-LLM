@@ -1,22 +1,22 @@
 {
     "metrics": {
-        "faithfulness": 0.9166666666666666,
-        "answer_similarity": 0.7188775142953339,
-        "context_precision": 0.39999999996,
-        "context_recall": 0.2
+        "faithfulness": 1.0,
+        "answer_similarity": 0.7252261573778159,
+        "context_precision": 0.19999999998,
+        "context_recall": 0.4
     },
     "details": [
         {
             "question": "Quel joueur a le meilleur % à 3 points sur les 5 derniers matchs ?",
-            "answer": "🧠 \"Voici un résultat surprenant : Mac McClung, connu pour son adresse à trois points, affiche ici un pourcentage de 0% sur les dernières statistiques disponibles. Cela pourrait indiquer une période de disette inhabituelle ou une sélection de données très spécifique. À suivre de près pour voir si cette tendance se confirme !\"\n\n| name        |   three_pct |\n|:------------|------------:|\n| Mac McClung |           0 |",
+            "answer": "🧠 Alondes Williams détient le meilleur pourcentage de tirs à trois points de la ligue, avec un incroyable 100% de réussite. Cela signifie qu'il a marqué tous ses tirs à trois points tentés cette saison, une performance exceptionnelle.\n\n| name             |   three_pct |\n|:-----------------|------------:|\n| Alondes Williams |         100 |",
             "ground_truth": "Skal Labissiere 100.00 (1/1)\nAndre Jackson Jr. 100.00 (1/1)\nAlondes Williams 100.00 (1/1)\nNic Claxton 100.00 (2/2)\nPJ Dozier 100.00 (1/1)",
-            "context": "Résultat SQL : 🧠 \"Voici un résultat surprenant : Mac McClung, connu pour son adresse à trois points, affiche ici un pourcentage de 0% sur les dernières statistiques disponibles. Cela pourrait indiquer une période de disette inhabituelle ou une sélection de données très spécifique. À suivre de près pour voir si cette tendance se confirme !\"\n\n| name        |   three_pct |\n|:------------|------------:|\n| Mac McClung |           0 |"
+            "context": "Résultat SQL : 🧠 Alondes Williams détient le meilleur pourcentage de tirs à trois points de la ligue, avec un incroyable 100% de réussite. Cela signifie qu'il a marqué tous ses tirs à trois points tentés cette saison, une performance exceptionnelle.\n\n| name             |   three_pct |\n|:-----------------|------------:|\n| Alondes Williams |         100 |"
         },
         {
             "question": "Quel joueur a le meilleur pourcentage de réussite à 3 points ?",
-            "answer": "🧠 \"Incroyable ! Alondes Williams affiche un pourcentage à 3 points à 100%, ce qui signifie qu'il a marqué tous ses tirs à trois points tentés cette saison. Une performance parfaite, mais attention, il faut vérifier le nombre de tentatives pour savoir si c'est une statistique solide ou un coup de chance sur quelques tirs.\"\n\n| name             |   three_pct |\n|:-----------------|------------:|\n| Alondes Williams |         100 |",
+            "answer": "🧠 Alondes Williams détient le meilleur pourcentage de tirs à 3 points de la ligue, avec un incroyable 100% de réussite. Cela signifie qu'il a marqué tous ses tirs à 3 points tentés cette saison, une performance exceptionnelle !\n\n| name             |   three_pct |\n|:-----------------|------------:|\n| Alondes Williams |         100 |",
             "ground_truth": "Alondes Williams",
-            "context": "Résultat SQL : 🧠 \"Incroyable ! Alondes Williams affiche un pourcentage à 3 points à 100%, ce qui signifie qu'il a marqué tous ses tirs à trois points tentés cette saison. Une performance parfaite, mais attention, il faut vérifier le nombre de tentatives pour savoir si c'est une statistique solide ou un coup de chance sur quelques tirs.\"\n\n| name             |   three_pct |\n|:-----------------|------------:|\n| Alondes Williams |         100 |"
+            "context": "Résultat SQL : 🧠 Alondes Williams détient le meilleur pourcentage de tirs à 3 points de la ligue, avec un incroyable 100% de réussite. Cela signifie qu'il a marqué tous ses tirs à 3 points tentés cette saison, une performance exceptionnelle !\n\n| name             |   three_pct |\n|:-----------------|------------:|\n| Alondes Williams |         100 |"
         },
         {
             "question": "Compare les statistiques de rebonds de l’équipe Lakers à domicile et à l’extérieur",
