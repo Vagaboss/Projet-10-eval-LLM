@@ -1,5 +1,5 @@
 """
-MistralChat.py — Agent RAG + SQL + PLOT (corrigé pour prioriser les questions textuelles)
+MistralChat.py — Agent RAG + SQL + PLOT (corrigé pour base globale sans données par match)
 """
 
 import streamlit as st
@@ -28,7 +28,7 @@ except ImportError as e:
 # --- Configuration logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logfire.configure()
-logfire.info("🚀 Démarrage de l’application MistralChat (RAG + SQL + PLOT)")
+logfire.info("🚀 Démarrage de l’application MistralChat (RAG + SQL + PLOT adapté)")
 
 # --- Initialisation Mistral ---
 api_key = MISTRAL_API_KEY
@@ -62,7 +62,7 @@ TABLES :
 
 RÈGLES :
 1️⃣ Retourne toujours du SQL PostgreSQL valide.
-2️⃣ N’invente jamais de colonnes (utilise les noms ci-dessus).
+2️⃣ N’invente jamais de colonnes ni de tables (utilise les noms ci-dessus uniquement).
 3️⃣ Ne renvoie **que** le code SQL, sans explication.
 
 ---
@@ -71,10 +71,84 @@ Question : {question}
 SQL :
 """
 
+# --- Few-Shot Plot Prompt (adapté à ta base) ---
+FEW_SHOT_PLOT = """
+Voici des exemples de correspondance entre des questions NBA et des visualisations basées sur les statistiques globales.
+
+SCHÉMA DISPONIBLE :
+- players(player_id, name, team_code)
+- stats(player_id, points, rebounds, assists, fg_pct, three_pct, ft_pct, net_rating, pie)
+- teams(team_id, team_code, team_name, wins, losses, offensive_rating, defensive_rating, net_rating)
+
+EXEMPLES :
+
+Question : Compare les meilleurs scoreurs de la NBA.
+Réponse attendue :
+SQL :
+SELECT p.name, s.points
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.points DESC
+LIMIT 10;
+Graphique : Barres (x = nom du joueur, y = points)
+
+---
+
+Question : Montre les 10 joueurs avec le meilleur pourcentage à 3 points.
+Réponse attendue :
+SQL :
+SELECT p.name, s.three_pct
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.three_pct DESC
+LIMIT 10;
+Graphique : Barres (x = nom du joueur, y = three_pct)
+
+---
+
+Question : Compare le net rating des 10 meilleures équipes.
+Réponse attendue :
+SQL :
+SELECT team_name, net_rating
+FROM teams
+ORDER BY net_rating DESC
+LIMIT 10;
+Graphique : Barres horizontales
+
+---
+
+Question : Montre la répartition du nombre de victoires par équipe.
+Réponse attendue :
+SQL :
+SELECT team_name, wins
+FROM teams
+ORDER BY wins DESC;
+Graphique : Camembert (x = équipe, y = nombre de victoires)
+
+---
+
+Question : Compare les joueurs ayant le plus haut PIE (Player Impact Estimate).
+Réponse attendue :
+SQL :
+SELECT p.name, s.pie
+FROM players p
+JOIN stats s ON p.player_id = s.player_id
+ORDER BY s.pie DESC
+LIMIT 10;
+Graphique : Barres
+
+---
+
+À partir de la question suivante, génère :
+1️⃣ Une requête SQL valide,
+2️⃣ Le type de graphique le plus adapté parmi [barres, horizontales, camembert],
+3️⃣ Sans texte explicatif.
+"""
+
 # --- Détection automatique ---
 def is_sql_question(prompt: str) -> bool:
     patterns = [
-        r"\b(points|rebonds|passes|victoires|défaites|pourcentage|bilan|classement|ratio|matchs|stat|score|moyenne|record)\b",
+        r"\b(points|rebonds|passes|victoires|défaites|pourcentage|classement|ratio|moyenne|record|rating|pie)\b",
         r"\b(top|meilleur|plus|moins|classement)\b",
         r"\b(équipe|joueur|performance|efficacité)\b"
     ]
@@ -86,7 +160,6 @@ def is_plot_question(prompt: str) -> bool:
         r"\b(graphique|courbe|visualise|montre|compare|évolution|diagramme|barres|camembert|histogramme)\b"
     ]
     return any(re.search(p, prompt.lower()) for p in patterns)
-
 
 # --- Génération Mistral ---
 def mistral_generate(prompt: str) -> str:
@@ -100,7 +173,6 @@ def mistral_generate(prompt: str) -> str:
     except Exception as e:
         logging.error(f"Erreur API Mistral : {e}")
         return f"Erreur API Mistral : {e}"
-
 
 # --- Interface Streamlit ---
 st.title(APP_TITLE)
@@ -127,68 +199,30 @@ if prompt := st.chat_input("Pose ta question sur la NBA..."):
         "selon", "sources", "rapport", "texte", "analyse", "écrites", "mentionné", "décrit", "articles"
     ])
 
-    # === Cas 1 : Question purement textuelle → RAG direct ===
     if is_textual:
         logfire.info("🧠 Question purement contextuelle → RAG FAISS prioritaire")
         results = vector_store_manager.search(prompt, k=SEARCH_K)
         context = "\n\n---\n\n".join([res["text"] for res in results]) if results else "Aucune information trouvée."
-
         rag_prompt = f"""Tu es un expert NBA.
 {context}
 
 Question : {prompt}
 Réponse :"""
         response = mistral_generate(rag_prompt)
-
         with st.chat_message("assistant"):
             st.write(response)
-
         st.session_state.messages.append({"role": "assistant", "content": response})
 
-    # === Cas 2 : Question chiffrée (SQL/RAG/PLOT mixte) ===
     elif is_sql_question(prompt):
-        use_rag = any(word in prompt.lower() for word in ["mentionné", "source", "rapport", "texte", "analyse"])
         use_plot = is_plot_question(prompt)
-        logfire.info("🔢 Question SQL détectée" + (" + RAG" if use_rag else "") + (" + PLOT" if use_plot else ""))
-
-        # --- Génération SQL ---
-        few_shot_prompt = FEW_SHOT_SQL.format(question=prompt)
+        few_shot_prompt = FEW_SHOT_PLOT + f"\nQuestion : {prompt}\nRéponse :" if use_plot else FEW_SHOT_SQL.format(question=prompt)
         generated_sql = mistral_generate(few_shot_prompt)
         st.markdown(f"```sql\n{generated_sql}\n```")
 
-        # --- Exécution SQL ---
         sql_result = sql_tool._run(generated_sql)
         df = getattr(sql_tool, "last_df", pd.DataFrame())
         response = sql_result
 
-        # --- Fusion SQL + RAG ---
-        if use_rag:
-            player_names = re.findall(r"[A-Z][a-z]+ [A-Z][a-z]+", sql_result)
-            if player_names:
-                logfire.info("🧩 Fusion SQL + FAISS — recherche contextuelle sur les joueurs extraits")
-                combined_contexts = []
-                for name in player_names[:3]:
-                    rag_results = vector_store_manager.search(name, k=2)
-                    for res in rag_results:
-                        combined_contexts.append(res["text"])
-                context = "\n\n---\n\n".join(combined_contexts) if combined_contexts else "Aucune information textuelle trouvée."
-
-                fusion_prompt = f"""
-Tu es un analyste NBA. Combine les statistiques suivantes et les extraits textuels issus de discussions réelles.
-Appuie-toi sur ces extraits pour justifier la réponse. Si une information chiffrée apparaît dans le texte, cite-la.
-
-STATISTIQUES :
-{sql_result}
-
-SOURCES TEXTUELLES :
-{context}
-
-Question : {prompt}
-Rédige une réponse concise et analytique (3 phrases maximum) :
-"""
-                response = mistral_generate(fusion_prompt)
-
-        # --- Graphique SQL ---
         if use_plot:
             if df is not None and not df.empty and len(df.columns) >= 2:
                 st.write("📊 Voici le graphique correspondant :")
@@ -198,31 +232,26 @@ Rédige une réponse concise et analytique (3 phrases maximum) :
                     title=f"Top {len(df)} {prompt}"
                 )
                 st.image(img_path)
-                st.success("✅ Graphique généré à partir des données SQL")
             else:
                 st.warning("⚠️ Impossible de tracer le graphique : données insuffisantes.")
 
         with st.chat_message("assistant"):
             st.write(response)
-
         st.session_state.messages.append({"role": "assistant", "content": response})
 
-    # === Cas 3 : RAG standard ===
     else:
         logfire.info("🧠 Question contextuelle → RAG FAISS")
         results = vector_store_manager.search(prompt, k=SEARCH_K)
         context = "\n\n---\n\n".join([res["text"] for res in results]) if results else "Aucune information trouvée."
-
         rag_prompt = f"""Tu es un expert NBA.
 {context}
 
 Question : {prompt}
 Réponse :"""
         response = mistral_generate(rag_prompt)
-
         with st.chat_message("assistant"):
             st.write(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
 
 st.markdown("---")
-st.caption("⚙️ Powered by Mistral AI, FAISS, PostgreSQL & Matplotlib | Agent RAG + SQL + PLOT robuste par Logfire")
+st.caption("⚙️ Powered by Mistral AI, FAISS, PostgreSQL & Matplotlib | Agent RAG + SQL + PLOT (adapté à données globales)")
