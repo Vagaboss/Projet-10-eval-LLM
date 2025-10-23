@@ -1,3 +1,7 @@
+"""
+sql_tool.py — Outil SQL NBA (auto-correction, explication, et compatibilité Plot)
+"""
+
 import psycopg2
 import pandas as pd
 import logging
@@ -11,16 +15,18 @@ from dotenv import load_dotenv
 # --- CONFIGURATION LOGGING ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# --- CHARGEMENT DES VARIABLES D’ENVIRONNEMENT ---
 load_dotenv()
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 if not MISTRAL_API_KEY:
     logging.warning("⚠️ Aucune clé API Mistral détectée dans le .env")
 
+# --- CONFIGURATION BASE DE DONNÉES ---
 DB_CONFIG = {
     "dbname": "nba_db",
     "user": "postgres",
-    "password": "naruto",  # adapte ton mot de passe
+    "password": "naruto",  # adapte à ton mot de passe
     "host": "localhost",
     "port": "5432"
 }
@@ -60,6 +66,9 @@ class NBAQueryTool(BaseTool):
         "corrige les erreurs de colonnes et génère une explication automatique du résultat."
     )
 
+    # ✅ Sauvegarde du dernier DataFrame pour compatibilité PlotTool
+    last_df: pd.DataFrame = pd.DataFrame()
+
     def _run(self, query: str) -> str:
         """Exécute une requête SQL sur la base NBA et génère une explication."""
         try:
@@ -72,23 +81,31 @@ class NBAQueryTool(BaseTool):
                     logging.info(f"🔧 Correction : '{wrong}' → '{correct}'")
                     cleaned_query = re.sub(rf"\b{wrong}\b", correct, cleaned_query, flags=re.IGNORECASE)
 
-            # --- Connexion ---
+            # --- Connexion et exécution ---
             conn = psycopg2.connect(**DB_CONFIG)
             df = pd.read_sql_query(cleaned_query, conn)
             conn.close()
 
+            # --- Si résultat vide ---
             if df.empty:
+                self.last_df = pd.DataFrame()
                 return "Aucun résultat trouvé pour cette requête."
 
-            # --- Explication ---
-            explanation = self._generate_explanation(cleaned_query, df)
-            result_md = df.head(10).to_markdown(index=False)
+            # ✅ Stockage du DataFrame pour le PlotTool
+            self.last_df = df.copy()
 
+            # --- Génération d'explication ---
+            explanation = self._generate_explanation(cleaned_query, df)
+
+            # --- Formatage Markdown ---
+            result_md = df.head(10).to_markdown(index=False)
             logging.info("✅ Requête exécutée avec succès :\n%s", cleaned_query)
+
             return f"{explanation}\n\n{result_md}"
 
         except Exception as e:
             logging.error(f"❌ Erreur lors de l'exécution SQL : {e}")
+            self.last_df = pd.DataFrame()  # vide en cas d’erreur
             return f"Erreur SQL : {e}"
 
     def _arun(self, query: str):
@@ -115,7 +132,7 @@ REQUÊTE :
 RÉSULTATS :
 {context}
 
-Rédige une explication courte et claire (2 phrases max) pour un public de fans NBA.
+Rédige une explication courte (2 phrases max) pour un public de fans NBA.
 Ne répète pas le code SQL.
 """
 
@@ -131,7 +148,7 @@ Ne répète pas le code SQL.
             logging.warning(f"⚠️ Erreur pendant la génération de l'explication Mistral : {e}")
         return self._generate_simple_explanation(query)
 
-    # --- Fallback local si Mistral indisponible ---
+    # --- 💬 Fallback local (si pas d'API) ---
     def _generate_simple_explanation(self, query: str) -> str:
         if "three_pct" in query:
             return "🏀 Voici les joueurs avec le meilleur pourcentage à 3 points :"
@@ -157,7 +174,7 @@ Ne répète pas le code SQL.
 
 # --- TEST LOCAL ---
 if __name__ == "__main__":
-    logging.info("🔍 Test local du SQL Tool (avec correction + explication)...")
+    logging.info("🔍 Test local du SQL Tool (avec correction + explication + compatibilité Plot)...")
     tool = NBAQueryTool()
     q = """
     SELECT p.name, s.points, s.fg_pct, s.three_points_percentage
@@ -167,6 +184,9 @@ if __name__ == "__main__":
     LIMIT 5;
     """
     print(tool._run(q))
+    print("\n✅ Aperçu DataFrame :")
+    print(tool.last_df.head())
+
 
 
 
