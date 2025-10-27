@@ -1,6 +1,6 @@
 # Assistant RAG avec Mistral
 
-Ce projet implémente un assistant virtuel basé sur le modèle Mistral, utilisant la technique de Retrieval-Augmented Generation (RAG) pour fournir des réponses précises et contextuelles à partir d'une base de connaissances personnalisée.
+Ce projet vise à évaluer la performance d’un système RAG combinant recherche textuelle (corpus Reddit NBA) et exploitation chiffrée (base SQL issue du fichier Excel NBA). L’objectif est d’analyser la robustesse du pipeline, sa capacité à fusionner texte et données numériques, et à fournir des visualisations dynamiques pour appuyer l’analyse.
 
 ## Fonctionnalités
 
@@ -64,6 +64,38 @@ MISTRAL_API_KEY=votre_clé_api_mistral
     └── vector_store.py     # Gestion de l'index vectoriel
 
 ```
+## Schéma architecture 
+      [Sources initiales : Reddit PDF + Excel NBA]
+                             │
+                             ▼
+             ┌─────────────────────────────────┐
+             │   Étape 1 : Indexation RAG (FAISS) │
+             │ - Extraction texte (data_loader)   │
+             │ - Découpage et embeddings Mistral  │
+             │ - Stockage FAISS + pickle          │
+             └─────────────────────────────────┘
+                             │
+                             ▼
+             ┌─────────────────────────────────┐
+             │ Étape 2 : Création base SQL (PostgreSQL) │
+             │ - Table players / stats / teams           │
+             │ - Alimentation via Excel NBA              │
+             └─────────────────────────────────┘
+                             │
+                             ▼
+             ┌─────────────────────────────────┐
+             │ Étape 3 : Application MistralChat │
+             │ - Détection automatique (SQL / RAG) │
+             │ - Fusion intelligente (SQL + texte) │
+             │ - Génération de graphiques (PlotTool) │
+             └─────────────────────────────────┘
+                             │
+                             ▼
+             ┌─────────────────────────────────┐
+             │ Étape 4 : Évaluation & Monitoring │
+             │ - RAGAS (faithfulness, precision) │
+             │ - Logfire (suivi des requêtes)   │
+             └─────────────────────────────────┘
 
 ## Utilisation
 
@@ -153,3 +185,42 @@ Vous pouvez personnaliser l'application en modifiant les paramètres dans `utils
 - Nombre de documents par défaut
 - Nom de la commune ou organisation
 
+## 📊 Visualisation automatique (PlotTool)
+
+Le PlotTool permet de tracer automatiquement des graphiques à partir de résultats SQL.
+Types de graphiques gérés :
+
+Diagramme en barres
+
+Camembert
+
+Histogramme
+
+Courbe de tendance
+
+Chaque graphique est sauvegardé dans un fichier temporaire (plot.png) et affiché dans Streamlit.
+
+## ✅ Procédure de validation
+	Vérification	Résultat attendu
+
+1	Lancer python indexer.py	faiss_index.idx et document_chunks.pkl générés
+2	Lancer PostgreSQL (nba_db)	Tables players, stats, teams créées
+3	Exécuter streamlit run MistralChat.py	L’interface s’affiche
+4	Tester une requête textuelle	Résultat issu du corpus Reddit
+5	Tester une requête SQL	Tableau de résultats affiché
+6	Tester une requête mixte (texte + chiffres)	Double réponse SQL         contexte textuel
+7	Tester une requête graphique	Affichage d’un graphique dynamique
+
+🔬 Check-list de validation finale
+✅ Vérification	             Résultat attendu
+
+1️⃣	Exécution de indexer.py	     faiss_index.idx et document_chunks.pkl générés
+2️⃣	Lancement de PostgreSQL	     Base nba_db opérationnelle
+3️⃣	Démarrage de MistralChat.py	Interface Streamlit fonctionnelle
+4️⃣	Requête textuelle	          Réponse cohérente issue du corpus Reddit
+5️⃣	Requête SQL	               Résultat chiffré affiché sous forme de tableau
+6️⃣	Requête mixte (SQL + texte)	Fusion correcte des deux sources
+7️⃣	Requête avec graphique	     Image générée et affichée dans Streamlit
+8️⃣	Évaluation RAGAS	          Fichier results_rag_sql.json créé
+9️⃣	Suivi Logfire	               Journaux des requêtes visibles en temps réel
+🔟	Test de robustesse	         Réponses stables aux requêtes mixtes simples
