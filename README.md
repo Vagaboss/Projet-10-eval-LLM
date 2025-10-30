@@ -163,15 +163,19 @@ Centralise tous les paramètres du projet :
 
 [Documents bruts]
       │
+
       ▼
  data_loader.py    →  extraction et parsing du texte
       │
+
       ▼
  indexer.py        →  orchestre l’indexation (embeddings + FAISS)
       │
+
       ▼
  vector_store.py   →  construit et interroge la base vectorielle
       │
+      
       ▼
  MistralChat.py    →  interface Streamlit (RAG + génération de réponse)
 
@@ -201,26 +205,44 @@ Courbe de tendance
 Chaque graphique est sauvegardé dans un fichier temporaire (plot.png) et affiché dans Streamlit.
 
 ## ✅ Procédure de validation
-	Vérification	Résultat attendu
 
-1	Lancer python indexer.py	faiss_index.idx et document_chunks.pkl générés
-2	Lancer PostgreSQL (nba_db)	Tables players, stats, teams créées
-3	Exécuter streamlit run MistralChat.py	L’interface s’affiche
-4	Tester une requête textuelle	Résultat issu du corpus Reddit
-5	Tester une requête SQL	Tableau de résultats affiché
-6	Tester une requête mixte (texte + chiffres)	Double réponse SQL         contexte textuel
-7	Tester une requête graphique	Affichage d’un graphique dynamique
+	Vérification           =>	  Résultat attendu
 
-🔬 Check-list de validation finale
-✅ Vérification	             Résultat attendu
+- 1	Lancer python indexer.py	=> faiss_index.idx et document_chunks.pkl générés
 
-1️⃣	Exécution de indexer.py	     faiss_index.idx et document_chunks.pkl générés
-2️⃣	Lancement de PostgreSQL	     Base nba_db opérationnelle
-3️⃣	Démarrage de MistralChat.py	Interface Streamlit fonctionnelle
-4️⃣	Requête textuelle	          Réponse cohérente issue du corpus Reddit
-5️⃣	Requête SQL	               Résultat chiffré affiché sous forme de tableau
-6️⃣	Requête mixte (SQL + texte)	Fusion correcte des deux sources
-7️⃣	Requête avec graphique	     Image générée et affichée dans Streamlit
-8️⃣	Évaluation RAGAS	          Fichier results_rag_sql.json créé
-9️⃣	Suivi Logfire	               Journaux des requêtes visibles en temps réel
-🔟	Test de robustesse	         Réponses stables aux requêtes mixtes simples
+- 2	Lancer PostgreSQL (nba_db) =>	Tables players, stats, teams créées
+
+- 3	Exécuter streamlit run MistralChat.py => L’interface s’affiche
+
+- 4	Tester une requête textuelle =>	Résultat issu du corpus Reddit
+
+- 5	Tester une requête SQL =>	Tableau de résultats affiché
+
+- 6	Tester une requête mixte (texte + chiffres) =>	Double réponse SQL         contexte textuel
+
+- 7	Tester une requête graphique =>	Affichage d’un graphique dynamique
+
+
+## 🔬 Check-list de validation finale
+
+✅ Vérification	        =>         Résultat attendu
+
+1️⃣	Exécution de indexer.py	=>     faiss_index.idx et document_chunks.pkl générés
+
+2️⃣	Lancement de PostgreSQL	 =>    Base nba_db opérationnelle
+
+3️⃣	Démarrage de MistralChat.py =>	Interface Streamlit fonctionnelle
+
+4️⃣	Requête textuelle	=>          Réponse cohérente issue du corpus Reddit
+
+5️⃣	Requête SQL	      =>         Résultat chiffré affiché sous forme de tableau
+
+6️⃣	Requête mixte (SQL + texte)	=> Fusion correcte des deux sources
+
+7️⃣	Requête avec graphique	=>     Image générée et affichée dans Streamlit
+
+8️⃣	Évaluation RAGAS	  =>        Fichier results_rag_sql.json créé
+
+9️⃣	Suivi Logfire	       =>        Journaux des requêtes visibles en temps réel
+
+🔟	Test de robustesse	   =>      Réponses stables aux requêtes mixtes simples
