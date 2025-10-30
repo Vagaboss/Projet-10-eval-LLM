@@ -74,6 +74,10 @@ class NBAQueryTool(BaseTool):
         try:
             # --- Nettoyage de la requête ---
             cleaned_query = query.strip().replace("```sql", "").replace("```", "").strip()
+            # Extraire uniquement la requête entre SELECT et le dernier point-virgule
+            match = re.search(r"(SELECT[\s\S]+?;)", cleaned_query, re.IGNORECASE)
+            if match:
+                cleaned_query = match.group(1).strip()
 
             # --- Correction automatique des colonnes ---
             for wrong, correct in COLUMN_SYNONYMS.items():
