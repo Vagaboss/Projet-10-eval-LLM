@@ -1,5 +1,7 @@
 # Assistant RAG avec Mistral
 
+- Lien Github : https://github.com/Vagaboss/Projet-10-eval-LLM
+
 Ce projet vise à évaluer la performance d’un système RAG combinant recherche textuelle (corpus Reddit NBA) et exploitation chiffrée (base SQL issue du fichier Excel NBA). L’objectif est d’analyser la robustesse du pipeline, sa capacité à fusionner texte et données numériques, et à fournir des visualisations dynamiques pour appuyer l’analyse.
 
 ## Fonctionnalités
