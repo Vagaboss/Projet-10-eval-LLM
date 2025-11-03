@@ -57,10 +57,10 @@ MISTRAL_API_KEY=votre_clé_api_mistral
 ├── indexer.py              # Script pour indexer les documents
 ├── inputs/                 # Dossier pour les documents sources
 ├── vector_db/              # Dossier pour l'index FAISS et les chunks
-├── database/               # Base de données SQLite pour les interactions
+├── db/                     # Base de données SQLite pour les interactions
 └── utils/                  # Modules utilitaires
     ├── config.py           # Configuration de l'application
-    ├── database.py         # Gestion de la base de données
+    ├── data_loader_.py     
     └── vector_store.py     # Gestion de l'index vectoriel
 
 ```
