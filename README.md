@@ -31,11 +31,9 @@ cd Projet-10-eval-LLM
 python -m venv venv
 
 # Activation de l'environnement virtuel
-# Sur Windows
-venv\Scripts\activate
-# Sur macOS/Linux
-source venv/bin/activate
-```
+# Sur Git
+source venv\Scripts\activate
+
 
 3. **Installer les dépendances**
 
