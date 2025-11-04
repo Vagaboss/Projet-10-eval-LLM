@@ -46,6 +46,8 @@ COLUMN_SYNONYMS = {
     "free_throw_pct": "ft_pct",
     "free_throw_percentage": "ft_pct",
     "three_points_pct": "three_pct",
+    "three_point_attempted": "three_pct",
+    "three_point_made": "three_pct",
     "three_points_percentage": "three_pct",
     "field_goal_pct": "fg_pct",
     "field_goals_pct": "fg_pct",
@@ -56,6 +58,7 @@ COLUMN_SYNONYMS = {
     "offrating": "offensive_rating",
     "defrating": "defensive_rating"
 }
+
 
 
 # --- OUTIL SQL PRINCIPAL ---
@@ -84,6 +87,21 @@ class NBAQueryTool(BaseTool):
                 if re.search(rf"\b{wrong}\b", cleaned_query, re.IGNORECASE):
                     logging.info(f"🔧 Correction : '{wrong}' → '{correct}'")
                     cleaned_query = re.sub(rf"\b{wrong}\b", correct, cleaned_query, flags=re.IGNORECASE)
+
+            # --- Correction automatique des alias erronés (IDs et noms inexistants) ---
+            alias_corrections = {
+                r"\bp\.id\b": "p.player_id",
+                r"\bp\.player_name\b": "p.name",
+                r"\bm\.id\b": "m.match_id",
+                r"\bm\.date\b": "m.match_date",
+                r"\bpms\.id\b": "pms.player_id",
+                r"\bpms\.season\b": "'2023-2024'",
+            }
+            for wrong, correct in alias_corrections.items():
+                if re.search(wrong, cleaned_query):
+                    logging.info(f"🔧 Correction d’alias : '{wrong}' → '{correct}'")
+                    cleaned_query = re.sub(wrong, correct, cleaned_query)
+
 
             # --- Connexion et exécution ---
             conn = psycopg2.connect(**DB_CONFIG)

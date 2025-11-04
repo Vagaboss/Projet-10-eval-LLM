@@ -1,7 +1,3 @@
-"""
-MistralChat.py — Agent RAG + SQL + PLOT (corrigé pour base globale sans données par match)
-"""
-
 import streamlit as st
 import os
 import logging
@@ -25,10 +21,10 @@ except ImportError as e:
     st.error(f"Erreur d'importation: {e}")
     st.stop()
 
-# --- Configuration logging ---
+# --- Configuration logging + Logfire ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logfire.configure()
-logfire.info("🚀 Démarrage de l’application MistralChat (RAG + SQL + PLOT adapté)")
+logfire.info("🚀 Démarrage de l’application MistralChat (RAG + SQL + PLOT complet)")
 
 # --- Initialisation Mistral ---
 api_key = MISTRAL_API_KEY
@@ -71,7 +67,7 @@ Question : {question}
 SQL :
 """
 
-# --- Few-Shot Plot Prompt (adapté à ta base) ---
+# --- Few-Shot Plot Prompt ---
 FEW_SHOT_PLOT = """
 Voici des exemples de correspondance entre des questions NBA et des visualisations basées sur les statistiques globales.
 
@@ -90,9 +86,7 @@ FROM players p
 JOIN stats s ON p.player_id = s.player_id
 ORDER BY s.points DESC
 LIMIT 10;
-Graphique : Barres (x = nom du joueur, y = points)
-
----
+Graphique : Barres
 
 Question : Montre les 10 joueurs avec le meilleur pourcentage à 3 points.
 Réponse attendue :
@@ -102,9 +96,7 @@ FROM players p
 JOIN stats s ON p.player_id = s.player_id
 ORDER BY s.three_pct DESC
 LIMIT 10;
-Graphique : Barres (x = nom du joueur, y = three_pct)
-
----
+Graphique : Barres
 
 Question : Compare le net rating des 10 meilleures équipes.
 Réponse attendue :
@@ -114,35 +106,6 @@ FROM teams
 ORDER BY net_rating DESC
 LIMIT 10;
 Graphique : Barres horizontales
-
----
-
-Question : Montre la répartition du nombre de victoires par équipe.
-Réponse attendue :
-SQL :
-SELECT team_name, wins
-FROM teams
-ORDER BY wins DESC;
-Graphique : Camembert (x = équipe, y = nombre de victoires)
-
----
-
-Question : Compare les joueurs ayant le plus haut PIE (Player Impact Estimate).
-Réponse attendue :
-SQL :
-SELECT p.name, s.pie
-FROM players p
-JOIN stats s ON p.player_id = s.player_id
-ORDER BY s.pie DESC
-LIMIT 10;
-Graphique : Barres
-
----
-
-À partir de la question suivante, génère :
-1️⃣ Une requête SQL valide,
-2️⃣ Le type de graphique le plus adapté parmi [barres, horizontales, camembert],
-3️⃣ Sans texte explicatif.
 """
 
 # --- Détection automatique ---
@@ -154,7 +117,6 @@ def is_sql_question(prompt: str) -> bool:
     ]
     return any(re.search(p, prompt.lower()) for p in patterns)
 
-
 def is_plot_question(prompt: str) -> bool:
     patterns = [
         r"\b(graphique|courbe|visualise|montre|compare|évolution|diagramme|barres|camembert|histogramme)\b"
@@ -164,14 +126,15 @@ def is_plot_question(prompt: str) -> bool:
 # --- Génération Mistral ---
 def mistral_generate(prompt: str) -> str:
     try:
-        response = client.chat(
-            model=model,
-            messages=[ChatMessage(role="user", content=prompt)],
-            temperature=0.2,
-        )
-        return response.choices[0].message.content.strip()
+        with logfire.span("Génération via Mistral"):
+            response = client.chat(
+                model=model,
+                messages=[ChatMessage(role="user", content=prompt)],
+                temperature=0.2,
+            )
+            return response.choices[0].message.content.strip()
     except Exception as e:
-        logging.error(f"Erreur API Mistral : {e}")
+        logfire.error(f"Erreur API Mistral : {e}")
         return f"Erreur API Mistral : {e}"
 
 # --- Interface Streamlit ---
@@ -194,15 +157,18 @@ if prompt := st.chat_input("Pose ta question sur la NBA..."):
     with st.chat_message("user"):
         st.write(prompt)
 
-    # --- Détection textuelle prioritaire ---
+    # --- Détection textuelle ---
     is_textual = any(word in prompt.lower() for word in [
         "selon", "sources", "rapport", "texte", "analyse", "écrites", "mentionné", "décrit", "articles"
     ])
 
+    # --- Cas 1 : Question purement textuelle ---
     if is_textual:
-        logfire.info("🧠 Question purement contextuelle → RAG FAISS prioritaire")
-        results = vector_store_manager.search(prompt, k=SEARCH_K)
+        logfire.info("🧠 Question purement contextuelle → RAG FAISS prioritaire", extra={"prompt": prompt})
+        with logfire.span("Recherche contexte FAISS"):
+            results = vector_store_manager.search(prompt, k=SEARCH_K)
         context = "\n\n---\n\n".join([res["text"] for res in results]) if results else "Aucune information trouvée."
+
         rag_prompt = f"""Tu es un expert NBA.
 {context}
 
@@ -212,36 +178,42 @@ Réponse :"""
         with st.chat_message("assistant"):
             st.write(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
+        logfire.info("✅ Réponse RAG générée avec succès", extra={"type": "RAG"})
 
+    # --- Cas 2 : Question SQL ou graphique ---
     elif is_sql_question(prompt):
         use_plot = is_plot_question(prompt)
+        logfire.info("🔢 Question SQL détectée", extra={"prompt": prompt, "with_plot": use_plot})
+
         few_shot_prompt = FEW_SHOT_PLOT + f"\nQuestion : {prompt}\nRéponse :" if use_plot else FEW_SHOT_SQL.format(question=prompt)
         generated_sql = mistral_generate(few_shot_prompt)
         st.markdown(f"```sql\n{generated_sql}\n```")
 
-        sql_result = sql_tool._run(generated_sql)
+        with logfire.span("Exécution SQL"):
+            sql_result = sql_tool._run(generated_sql)
         df = getattr(sql_tool, "last_df", pd.DataFrame())
         response = sql_result
 
         if use_plot:
+            logfire.info("📊 Tentative de génération graphique", extra={"rows": len(df)})
             if df is not None and not df.empty and len(df.columns) >= 2:
-                st.write("📊 Voici le graphique correspondant :")
-                img_path = plot_tool._run(
-                    df.iloc[:, :2],
-                    chart_type="barres",
-                    title=f"Top {len(df)} {prompt}"
-                )
+                img_path = plot_tool._run(df.iloc[:, :2], chart_type="barres", title=f"Top {len(df)} {prompt}")
                 st.image(img_path)
+                logfire.info("✅ Graphique généré avec succès", extra={"file": img_path})
             else:
                 st.warning("⚠️ Impossible de tracer le graphique : données insuffisantes.")
+                logfire.warning("⚠️ Échec de génération du graphique : données insuffisantes")
 
         with st.chat_message("assistant"):
             st.write(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
+        logfire.info("✅ Réponse SQL ou graphique générée avec succès", extra={"type": "SQL" if not use_plot else "SQL+PLOT"})
 
+    # --- Cas 3 : Fallback → RAG standard ---
     else:
-        logfire.info("🧠 Question contextuelle → RAG FAISS")
-        results = vector_store_manager.search(prompt, k=SEARCH_K)
+        logfire.info("🧠 Question contextuelle → RAG FAISS (fallback)", extra={"prompt": prompt})
+        with logfire.span("Recherche contexte FAISS"):
+            results = vector_store_manager.search(prompt, k=SEARCH_K)
         context = "\n\n---\n\n".join([res["text"] for res in results]) if results else "Aucune information trouvée."
         rag_prompt = f"""Tu es un expert NBA.
 {context}
@@ -252,6 +224,7 @@ Réponse :"""
         with st.chat_message("assistant"):
             st.write(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
+        logfire.info("✅ Réponse RAG (fallback) générée", extra={"type": "RAG"})
 
 st.markdown("---")
-st.caption("⚙️ Powered by Mistral AI, FAISS, PostgreSQL & Matplotlib | Agent RAG + SQL + PLOT (adapté à données globales)")
+st.caption("⚙️ Powered by Mistral AI, FAISS, PostgreSQL, Matplotlib & Logfire | Agent RAG + SQL + PLOT complet et traçable")
