@@ -1,4 +1,4 @@
-streamlit==1.44.1
+streamlit==1.54.0
 mistralai==0.3.0
 langchain==0.3.23
 faiss-cpu==1.10.0
